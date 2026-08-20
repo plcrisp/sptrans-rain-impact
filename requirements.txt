@@ -2,3 +2,6 @@ python-dotenv
 requests
 pandas
 jupyter
+geopandas
+shapely
+pyarrow
