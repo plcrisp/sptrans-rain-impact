@@ -51,8 +51,8 @@ def build_gtfs_dataset(gtfs_dir, output_dir=None):
     gdf = create_geometries(dataset)
 
     if output_dir:
-        output_path = os.path.join(output_dir, 'routes_geometry.parquet')
-        gdf.to_parquet(output_path)
+        output_path = os.path.join(output_dir, 'routes_geometry.geojson')
+        gdf.to_file(output_path, driver="GeoJSON")
         print(f"Dataset saved successfully at: {output_path}")
 
     return gdf
