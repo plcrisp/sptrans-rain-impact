@@ -37,6 +37,10 @@ class Config:
     # Parâmetros de coleta SPTrans
     SPTRANS_BASE_URL: str = os.getenv("SPTRANS_BASE_URL", "http://api.olhovivo.sptrans.com.br/v2.1")
     COLLECTION_INTERVAL_SECONDS: int = int(os.getenv("COLLECTION_INTERVAL_SECONDS", "60"))
+    COLLECT_INTERVAL_SECONDS: int = int(os.getenv("COLLECT_INTERVAL_SECONDS", "60"))
+    COLLECT_INTER_CALL_DELAY_SECONDS: float = float(os.getenv("COLLECT_INTER_CALL_DELAY_SECONDS", "0.2"))
+    COLLECT_MAX_CONSECUTIVE_FAILED_CYCLES: int = int(os.getenv("COLLECT_MAX_CONSECUTIVE_FAILED_CYCLES", "5"))
+    CYCLES_LOG_PATH: str = os.path.join(LOGS_DIR, "collect_sptrans_cycles.jsonl")
     HTTP_TIMEOUT_SECONDS: int = int(os.getenv("HTTP_TIMEOUT_SECONDS", "15"))
     HTTP_MAX_RETRIES: int = int(os.getenv("HTTP_MAX_RETRIES", "5"))
     HTTP_BACKOFF_BASE_SECONDS: int = int(os.getenv("HTTP_BACKOFF_BASE_SECONDS", "2"))
