@@ -28,9 +28,9 @@ __pycache__/
 data/**
 !data/**/
 !.gitkeep
-# Caso arquivos de dados pequenos precisem ser versionados no futuro (ex.: data/bronze/selected_lines.json),
-# descomente a regra abaixo em vez de alterar a regra geral:
-# !data/bronze/selected_lines.json
+# Exceções de dados essenciais versionados: necessários para a VM de coleta da Task 2 via git clone
+!data/bronze/lines/selected_lines.json
+!data/bronze/lines/line_station_mapping.parquet
 
 # Logs directory: ignore log files, keep directory structure via .gitkeep
 logs/**

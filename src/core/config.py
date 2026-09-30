@@ -26,12 +26,13 @@ class Config:
     # Subpastas específicas por fonte
     SPTRANS_BRONZE_DIR = os.path.join(BRONZE_DIR, "sptrans")
     CEMADEN_BRONZE_DIR = os.path.join(BRONZE_DIR, "cemaden")
+    LINES_BRONZE_DIR = os.path.join(BRONZE_DIR, "lines")
     SPTRANS_SILVER_DIR = os.path.join(SILVER_DIR, "sptrans")
     CEMADEN_SILVER_DIR = os.path.join(SILVER_DIR, "cemaden")
 
     # Arquivos de dados
-    SELECTED_LINES_PATH = os.path.join(BRONZE_DIR, "selected_lines.json")
-    LINE_STATION_MAPPING_PATH = os.path.join(BRONZE_DIR, "line_station_mapping.parquet")
+    SELECTED_LINES_PATH = os.path.join(LINES_BRONZE_DIR, "selected_lines.json")
+    LINE_STATION_MAPPING_PATH = os.path.join(LINES_BRONZE_DIR, "line_station_mapping.parquet")
 
     # Parâmetros de coleta SPTrans
     SPTRANS_BASE_URL: str = os.getenv("SPTRANS_BASE_URL", "http://api.olhovivo.sptrans.com.br/v2.1")
@@ -70,6 +71,7 @@ class Config:
             cls.STATIONS_DATA_DIR,
             cls.SPTRANS_BRONZE_DIR,
             cls.CEMADEN_BRONZE_DIR,
+            cls.LINES_BRONZE_DIR,
             cls.SILVER_DIR,
             cls.SPTRANS_SILVER_DIR,
             cls.CEMADEN_SILVER_DIR,
