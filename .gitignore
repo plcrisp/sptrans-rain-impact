@@ -1,25 +1,39 @@
+# Virtual environments
 venv/
 env/
 .env/
 .venv/
 
+# Environment files
 .env
 .env.local
 .env.development
+!.env.example
 
-data/bronze/*
-
+# Python cache & artifacts
 __pycache__/
 *.py[cod]
 *$py.class
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
 
+# IDE configs & swap files
 .vscode/
 .idea/
 *.swp
 *.swo
 
-logs/
-*.log
+# Data directory: ignore all contents, keep directory structure via .gitkeep
+data/**
+!data/**/
+!.gitkeep
+# Caso arquivos de dados pequenos precisem ser versionados no futuro (ex.: data/bronze/selected_lines.json),
+# descomente a regra abaixo em vez de alterar a regra geral:
+# !data/bronze/selected_lines.json
 
-.pytest_cache/
-.mypy_cache/
+# Logs directory: ignore log files, keep directory structure via .gitkeep
+logs/**
+!logs/**/
+!.gitkeep
+*.log
