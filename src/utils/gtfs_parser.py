@@ -1,4 +1,3 @@
-import math
 import os
 from typing import Dict, Optional, Set
 
@@ -57,13 +56,6 @@ def service_ids_by_daytype(calendar_df: pd.DataFrame) -> Dict[str, Set[str]]:
         "saturday": set(df.loc[saturday_mask, "service_id"].dropna()),
         "sunday": set(df.loc[sunday_mask, "service_id"].dropna()),
     }
-
-
-def trips_in_window(start_s: int, end_s: int, headway_s: int) -> int:
-    """Calcula o número de partidas de uma janela de frequências GTFS."""
-    if headway_s <= 0 or end_s <= start_s:
-        return 0
-    return math.ceil((end_s - start_s) / headway_s)
 
 
 def compute_service_metrics(

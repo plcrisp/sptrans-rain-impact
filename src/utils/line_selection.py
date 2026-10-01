@@ -1,28 +1,106 @@
+import difflib
 import json
+import re
 from typing import Any, Dict, List, Optional, Tuple
+import unicodedata
+
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+from shapely.geometry import LineString, Point
 
-from src.utils.geo_utils import (
-    DEFAULT_MAX_DIST_M,
-    DEFAULT_STEP_M,
-    nearest_station,
-    sample_linestring,
-)
 from src.utils.logger import get_logger
-from src.utils.text_utils import text_similarity
 
 logger = get_logger("line_selection")
 
-# Constantes de scoring e amostragem
+# Constantes de amostragem e scoring
+DEFAULT_STEP_M = 100.0
+DEFAULT_MAX_DIST_M = 2000.0
+DEFAULT_MIN_STATION_DIST_M = 3000.0
+
 WEIGHT_COVERAGE = 0.5
 WEIGHT_FREQUENCY = 0.3
 WEIGHT_LENGTH = 0.2
 
 DEFAULT_MAX_PEAK_HEADWAY_MIN = 15.0
 DEFAULT_MIN_COVERAGE = 0.90
-DEFAULT_MIN_STATION_DIST_M = 3000.0
+
+
+def normalize_text(text: str) -> str:
+    """Normaliza texto para comparação de destinos e terminais."""
+    if not text:
+        return ""
+    text = unicodedata.normalize("NFKD", str(text)).encode("ASCII", "ignore").decode("utf-8")
+    text = text.upper()
+    replacements = {
+        "PCA.": "PRACA",
+        "PCA": "PRACA",
+        "TERM.": "TERMINAL",
+        "TERM": "TERMINAL",
+        "METRO": "METRO",
+        "EST.": "ESTACAO",
+        "JD.": "JARDIM",
+        "VL.": "VILA",
+        "PQ.": "PARQUE",
+        "AV.": "AVENIDA",
+        "R.": "RUA",
+    }
+    tokens = re.findall(r"\w+", text)
+    return " ".join([replacements.get(t, t) for t in tokens])
+
+
+def text_similarity(s1: str, s2: str) -> float:
+    """Calcula similaridade textual combinando Jaccard e SequenceMatcher."""
+    n1 = normalize_text(s1)
+    n2 = normalize_text(s2)
+    if not n1 or not n2:
+        return 0.0
+    t1 = set(n1.split())
+    t2 = set(n2.split())
+    jaccard = len(t1 & t2) / len(t1 | t2) if (t1 | t2) else 0.0
+    seq = difflib.SequenceMatcher(None, n1, n2).ratio()
+    return max(jaccard, seq)
+
+
+def sample_linestring(
+    geom: LineString,
+    step_m: float = DEFAULT_STEP_M,
+) -> Tuple[np.ndarray, List[Point]]:
+    """Amostra pontos ao longo de uma LineString a cada step_m em projeção métrica."""
+    total_len = geom.length
+    if total_len <= 0:
+        return np.array([0.0], dtype=np.float32), [geom.interpolate(0.0)]
+
+    distances = np.arange(0, total_len, step_m, dtype=np.float32)
+    if len(distances) == 0 or distances[-1] < total_len:
+        distances = np.append(distances, np.float32(total_len))
+
+    points = [geom.interpolate(float(d)) for d in distances]
+    return distances, points
+
+
+def nearest_station(
+    points_gdf: gpd.GeoDataFrame,
+    stations_gdf: gpd.GeoDataFrame,
+    max_dist_m: float = DEFAULT_MAX_DIST_M,
+) -> gpd.GeoDataFrame:
+    """Encontra para cada ponto amostrado a estação pluviométrica ativa mais próxima."""
+    if points_gdf.crs is None:
+        points_gdf = points_gdf.set_crs(31983)
+    if stations_gdf.crs is None:
+        stations_gdf = stations_gdf.set_crs(31983)
+
+    joined = gpd.sjoin_nearest(
+        points_gdf,
+        stations_gdf[["station_id", "station_name", "geometry"]],
+        distance_col="dist_to_station_m",
+        how="left",
+    )
+    if "point_idx" in joined.columns and "route_id" in joined.columns:
+        joined = joined.drop_duplicates(subset=["route_id", "direction_id", "point_idx"])
+
+    joined["covered"] = joined["dist_to_station_m"] <= max_dist_m
+    return joined
 
 
 def load_active_stations(path: str) -> gpd.GeoDataFrame:

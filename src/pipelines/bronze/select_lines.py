@@ -17,7 +17,6 @@ import pandas as pd
 
 from src.clients.sptrans_client import SPTransClient
 from src.core.config import Config
-from src.utils.file_utils import compute_file_sha256
 from src.utils.line_selection import (
     DEFAULT_MAX_DIST_M,
     DEFAULT_MAX_PEAK_HEADWAY_MIN,
