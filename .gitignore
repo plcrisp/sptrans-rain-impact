@@ -28,7 +28,8 @@ __pycache__/
 data/**
 !data/**/
 !.gitkeep
-# Exceções de dados essenciais versionados: necessários para a VM de coleta da Task 2 via git clone
+# Exceções de dados essenciais versionados: entrada GTFS e linhas selecionadas
+!data/reference/gtfs/gtfs.zip
 !data/reference/lines/selected_lines.json
 !data/reference/lines/line_station_mapping.parquet
 !data/reference/lines/line_ranking.csv

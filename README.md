@@ -52,30 +52,6 @@ data/
 
 O pipeline divide-se em 4 etapas lógicas e intuitivas:
 
-```mermaid
-flowchart TD
-    subgraph ETAPA 0: REFERÊNCIA
-        A[GTFS Estático] --> C[routes_geometry.geojson]
-        B[Catálogo Cemaden] --> D[cemaden_sp_stations.json]
-        C & D --> E[Ranking & Seleção Multi-Critério]
-        E --> F[line_station_mapping.parquet]
-    end
-
-    subgraph ETAPA 1: INGESTÃO BRONZE
-        G[API SPTrans Olho Vivo] -->|Job a cada 1 min| H[Bronze SPTrans: JSONs de GPS]
-        I[API CEMADEN] -->|Histórico na mesma janela| J[Bronze CEMADEN: CSVs por Estação]
-    end
-
-    subgraph ETAPA 2: TRATAMENTO SILVER
-        H & F --> K[sptrans_silver_export.csv]
-        J --> L[rain_silver_export.csv]
-    end
-
-    subgraph ETAPA 3: CAMADA GOLD
-        K & L --> M[Cruzamento Espaço-Temporal: Velocidade vs Chuva]
-    end
-```
-
 ### 1. Etapa de Referência (`data/reference/`) — _Setup_
 
 - **GTFS**: Processa itinerários (`shapes`), viagens e paradas, calculando o comprimento e a velocidade programada de cada traçado.
