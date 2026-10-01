@@ -66,5 +66,3 @@ Capturar em tempo real a telemetria dos ônibus das 8 linhas selecionadas a cada
 | :--- | :--- | :--- |
 | `data/bronze/sptrans/date=YYYY-MM-DD/hour=HH/` | JSON particionado | Diretórios particionados por data e hora UTC. |
 | `.../posicao_{codigoLinha}_{compact_ts}.json` | JSON | Arquivo atômico bruto contendo envelope de auditoria e payload original. |
-| `logs/collect_sptrans_cycles.jsonl` | JSONL (append) | Registro linha a linha de métricas por ciclo (gravados, inalterados, vazios, erros, latência). |
-| `logs/pipeline.log` | Texto rotativo | Log de execução e auditoria de erros. |

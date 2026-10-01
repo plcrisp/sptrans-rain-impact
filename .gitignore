@@ -33,8 +33,4 @@ data/**
 !data/reference/lines/line_station_mapping.parquet
 !data/reference/lines/line_ranking.csv
 
-# Logs directory: ignore log files, keep directory structure via .gitkeep
-logs/**
-!logs/**/
-!.gitkeep
 *.log

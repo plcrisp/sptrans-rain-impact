@@ -20,10 +20,9 @@ class Config:
     LINES_REFERENCE_DIR = os.path.join(REFERENCE_DIR, "lines")
     LINES_BRONZE_DIR = LINES_REFERENCE_DIR  # compatibilidade retroativa
 
-    # Camadas medalhão e logs
+    # Camadas medalhão
     BRONZE_DIR = RAW_DATA_DIR
     SILVER_DIR = os.path.join(DATA_DIR, "silver")
-    LOGS_DIR = os.path.join(BASE_DIR, "logs")
 
     # Subpastas específicas por fonte
     SPTRANS_BRONZE_DIR = os.path.join(BRONZE_DIR, "sptrans")
@@ -42,7 +41,6 @@ class Config:
     COLLECT_INTERVAL_SECONDS: int = int(os.getenv("COLLECT_INTERVAL_SECONDS", "60"))
     COLLECT_INTER_CALL_DELAY_SECONDS: float = float(os.getenv("COLLECT_INTER_CALL_DELAY_SECONDS", "0.2"))
     COLLECT_MAX_CONSECUTIVE_FAILED_CYCLES: int = int(os.getenv("COLLECT_MAX_CONSECUTIVE_FAILED_CYCLES", "5"))
-    CYCLES_LOG_PATH: str = os.path.join(LOGS_DIR, "collect_sptrans_cycles.jsonl")
     HTTP_TIMEOUT_SECONDS: int = int(os.getenv("HTTP_TIMEOUT_SECONDS", "15"))
     HTTP_MAX_RETRIES: int = int(os.getenv("HTTP_MAX_RETRIES", "5"))
     HTTP_BACKOFF_BASE_SECONDS: int = int(os.getenv("HTTP_BACKOFF_BASE_SECONDS", "2"))
@@ -106,7 +104,7 @@ class Config:
 
     @classmethod
     def ensure_dirs(cls) -> None:
-        """Cria todos os diretórios de dados e logs se não existirem."""
+        """Cria todos os diretórios de dados se não existirem."""
         dirs = [
             cls.DATA_DIR,
             cls.REFERENCE_DIR,
@@ -119,7 +117,6 @@ class Config:
             cls.SILVER_DIR,
             cls.SPTRANS_SILVER_DIR,
             cls.CEMADEN_SILVER_DIR,
-            cls.LOGS_DIR,
         ]
         for directory in dirs:
             os.makedirs(directory, exist_ok=True)

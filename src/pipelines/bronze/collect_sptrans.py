@@ -215,7 +215,6 @@ def run_collection(
     simulate_logout_at_cycle: Optional[int] = None,
     client: Optional[SPTransClient] = None,
     base_dir: str = Config.SPTRANS_BRONZE_DIR,
-    cycles_log_path: str = Config.CYCLES_LOG_PATH,
 ) -> int:
     """Loop principal de coleta contínua da SPTrans."""
     global _stop_requested
@@ -340,27 +339,6 @@ def run_collection(
                 f"Reautenticações: {relogins_in_cycle}"
             )
 
-            # Registro JSONL no cycles_log_path
-            cycle_log_entry = {
-                "cycle_id": cycle_id,
-                "run_id": run_id,
-                "start_time_utc": cycle_start_utc.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
-                "targets_count": len(targets),
-                "saved_count": saved_count,
-                "unchanged_count": unchanged_count,
-                "empty_count": empty_count,
-                "errors_count": errors_count,
-                "total_vehicles": total_vehicles_seen,
-                "avg_latency_ms": avg_lat,
-                "max_latency_ms": max_lat,
-                "relogin_count": relogins_in_cycle,
-            }
-            try:
-                os.makedirs(os.path.dirname(cycles_log_path), exist_ok=True)
-                with open(cycles_log_path, "a", encoding="utf-8") as f:
-                    f.write(json.dumps(cycle_log_entry, ensure_ascii=False) + "\n")
-            except Exception as e:
-                logger.warning(f"Erro ao salvar registro do ciclo em {cycles_log_path}: {e}")
 
             # Detecção de falhas consecutivas
             if errors_count == len(targets):
