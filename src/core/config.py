@@ -14,25 +14,27 @@ class Config:
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     DATA_DIR = os.path.join(BASE_DIR, "data")
     RAW_DATA_DIR = os.path.join(DATA_DIR, "bronze")
-    GTFS_DATA_DIR = os.path.join(RAW_DATA_DIR, "gtfs")
-    STATIONS_DATA_DIR = os.path.join(RAW_DATA_DIR, "stations")
+    REFERENCE_DIR = os.path.join(DATA_DIR, "reference")
+    GTFS_DATA_DIR = os.path.join(REFERENCE_DIR, "gtfs")
+    STATIONS_DATA_DIR = os.path.join(REFERENCE_DIR, "stations")
+    LINES_REFERENCE_DIR = os.path.join(REFERENCE_DIR, "lines")
+    LINES_BRONZE_DIR = LINES_REFERENCE_DIR  # compatibilidade retroativa
 
-    # Camadas medalhão e relatórios/logs
+    # Camadas medalhão e logs
     BRONZE_DIR = RAW_DATA_DIR
     SILVER_DIR = os.path.join(DATA_DIR, "silver")
-    REPORTS_DIR = os.path.join(DATA_DIR, "reports")
     LOGS_DIR = os.path.join(BASE_DIR, "logs")
 
     # Subpastas específicas por fonte
     SPTRANS_BRONZE_DIR = os.path.join(BRONZE_DIR, "sptrans")
     CEMADEN_BRONZE_DIR = os.path.join(BRONZE_DIR, "cemaden")
-    LINES_BRONZE_DIR = os.path.join(BRONZE_DIR, "lines")
     SPTRANS_SILVER_DIR = os.path.join(SILVER_DIR, "sptrans")
     CEMADEN_SILVER_DIR = os.path.join(SILVER_DIR, "cemaden")
 
-    # Arquivos de dados
-    SELECTED_LINES_PATH = os.path.join(LINES_BRONZE_DIR, "selected_lines.json")
-    LINE_STATION_MAPPING_PATH = os.path.join(LINES_BRONZE_DIR, "line_station_mapping.parquet")
+    # Arquivos de dados de referência
+    SELECTED_LINES_PATH = os.path.join(LINES_REFERENCE_DIR, "selected_lines.json")
+    LINE_STATION_MAPPING_PATH = os.path.join(LINES_REFERENCE_DIR, "line_station_mapping.parquet")
+    LINE_RANKING_PATH = os.path.join(LINES_REFERENCE_DIR, "line_ranking.csv")
 
     # Parâmetros de coleta SPTrans
     SPTRANS_BASE_URL: str = os.getenv("SPTRANS_BASE_URL", "http://api.olhovivo.sptrans.com.br/v2.1")
@@ -72,8 +74,6 @@ class Config:
     CEMADEN_MANIFEST_PATH: str = os.path.join(CEMADEN_BRONZE_DIR, "_manifest.jsonl")
     CEMADEN_GAPS_PATH: str = os.path.join(CEMADEN_SILVER_DIR, "gaps.parquet")
     CEMADEN_QUALITY_REPORT_PATH: str = os.path.join(CEMADEN_SILVER_DIR, "quality_report.json")
-    CEMADEN_INGEST_SUMMARY_PATH: str = os.path.join(REPORTS_DIR, "cemaden_ingest_summary.json")
-
     # Regras geográficas e de velocidade
     SP_BBOX: dict = dict(lat_min=-24.10, lat_max=-23.30, lon_min=-47.00, lon_max=-46.20)
     MAX_SPEED_KMH: int = 80
@@ -109,17 +109,16 @@ class Config:
         """Cria todos os diretórios de dados e logs se não existirem."""
         dirs = [
             cls.DATA_DIR,
-            cls.BRONZE_DIR,
+            cls.REFERENCE_DIR,
             cls.GTFS_DATA_DIR,
             cls.STATIONS_DATA_DIR,
+            cls.LINES_REFERENCE_DIR,
+            cls.BRONZE_DIR,
             cls.SPTRANS_BRONZE_DIR,
             cls.CEMADEN_BRONZE_DIR,
-            cls.LINES_BRONZE_DIR,
             cls.SILVER_DIR,
             cls.SPTRANS_SILVER_DIR,
             cls.CEMADEN_SILVER_DIR,
-            cls.CEMADEN_STATION_STATUS_DIR,
-            cls.REPORTS_DIR,
             cls.LOGS_DIR,
         ]
         for directory in dirs:

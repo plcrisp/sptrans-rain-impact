@@ -29,8 +29,9 @@ data/**
 !data/**/
 !.gitkeep
 # Exceções de dados essenciais versionados: necessários para a VM de coleta da Task 2 via git clone
-!data/bronze/lines/selected_lines.json
-!data/bronze/lines/line_station_mapping.parquet
+!data/reference/lines/selected_lines.json
+!data/reference/lines/line_station_mapping.parquet
+!data/reference/lines/line_ranking.csv
 
 # Logs directory: ignore log files, keep directory structure via .gitkeep
 logs/**

@@ -71,7 +71,6 @@ Percorrendo o ranking do maior para o menor score, uma linha é selecionada se c
 
 | Arquivo | Localização | Descrição |
 | :--- | :--- | :--- |
-| `selected_lines.json` | `data/bronze/lines/` | Metadados completos das 8 linhas selecionadas, `codigoLinha` de ida/volta, estações necessárias e parâmetros da seleção. |
-| `line_station_mapping.parquet` | `data/bronze/lines/` | Tabela de pontos amostrados a cada 100m de todas as linhas escolhidas, com coordenadas (lat/lon), distância e ID da estação pluviométrica mais próxima. |
-| `line_ranking.csv` | `data/reports/` | Ranking multi-critério completo de todas as linhas avaliadas e motivos de exclusão. |
-| `selected_lines_map.html` | `data/reports/` | Mapa interativo Folium com os trajetos das linhas, buffers de 2km das estações dominantes e estações vizinhas cobertas. |
+| `selected_lines.json` | `data/reference/lines/` | Metadados completos das 8 linhas selecionadas, `codigoLinha` de ida/volta, estações necessárias e parâmetros da seleção. |
+| `line_station_mapping.parquet` | `data/reference/lines/` | Tabela de pontos amostrados a cada 100m de todas as linhas escolhidas, com coordenadas (lat/lon), distância e ID da estação pluviométrica mais próxima. |
+| `line_ranking.csv` | `data/reference/lines/` | Ranking multi-critério completo de todas as linhas avaliadas e motivos de exclusão. |

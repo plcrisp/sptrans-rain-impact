@@ -34,7 +34,6 @@ from src.utils.line_selection import (
     score_routes,
 )
 from src.utils.logger import get_logger
-from src.utils.map_utils import generate_map
 
 logger = get_logger("select_lines")
 
@@ -73,7 +72,7 @@ def main() -> None:
     df_ranked = score_routes(df_routes, max_peak_headway_min=args.max_peak_headway_min)
 
     # Salvar ranking completo
-    ranking_csv_path = os.path.join(Config.REPORTS_DIR, "line_ranking.csv")
+    ranking_csv_path = Config.LINE_RANKING_PATH
     df_ranked.to_csv(ranking_csv_path, index=False, encoding="utf-8")
     logger.info(f"Ranking completo de rotas salvo em: {ranking_csv_path}")
 
@@ -241,7 +240,7 @@ def main() -> None:
             f"Apenas {len(chosen_lines_meta)} linhas atenderam a todos os critérios (alvo: {args.n_lines})."
         )
 
-    # 5. Gerar selected_lines.json em data/bronze/lines
+    # 5. Gerar selected_lines.json em data/reference/lines
     chosen_route_ids = {line["route_id"] for line in chosen_lines_meta}
     chosen_points = joined_points[joined_points["route_id"].isin(chosen_route_ids)].copy()
 
@@ -265,7 +264,7 @@ def main() -> None:
             "min_station_dist_m": DEFAULT_MIN_STATION_DIST_M,
         },
         "gtfs_source": {
-            "routes_geometry": "data/bronze/gtfs/routes_geometry.geojson",
+            "routes_geometry": "data/reference/gtfs/routes_geometry.geojson",
             "n_features": len(routes_gdf),
             "sha256": compute_file_sha256(routes_path),
         },
@@ -278,7 +277,7 @@ def main() -> None:
         json.dump(selected_lines_payload, f, indent=2, ensure_ascii=False)
     logger.info(f"Arquivo de linhas selecionadas salvo em: {selected_lines_json_path}")
 
-    # 6. Gerar line_station_mapping.parquet em data/bronze/lines
+    # 6. Gerar line_station_mapping.parquet em data/reference/lines
     # Mapeamento do codigoLinha para os pontos
     cl_mapping = {}
     for line in chosen_lines_meta:
@@ -319,17 +318,6 @@ def main() -> None:
     parquet_path = Config.LINE_STATION_MAPPING_PATH
     df_parquet.to_parquet(parquet_path, engine="pyarrow", compression="snappy", index=False)
     logger.info(f"Mapeamento trajeto-estação salvo em: {parquet_path}")
-
-    # 7. Gerar mapa interativo Folium
-    map_html_path = os.path.join(Config.REPORTS_DIR, "selected_lines_map.html")
-    generate_map(
-        chosen_lines=chosen_lines_meta,
-        routes_gdf=routes_gdf,
-        stations_gdf=stations_gdf,
-        stations_needed_ids=set(stations_needed),
-        output_html_path=map_html_path,
-        max_dist_m=args.max_dist_m,
-    )
 
     t_end = time.time()
     logger.info(f"Pipeline select_lines concluído com sucesso em {t_end - t_start:.2f}s!")

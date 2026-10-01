@@ -7,7 +7,7 @@ Este documento explica de forma direta como os dados pluviométricos do CEMADEN 
 ## 1. Camada Bronze (Como os dados chegam)
 
 * **Fonte:** API PED (Plataforma de Coleta de Dados) do CEMADEN, via autenticação JWT e agendamento de jobs de exportação assíncronos para sensores pluviométricos (rede 11, sensor 10).
-* **Estações Alvo:** Lista de estações pluviométricas ativas necessárias (`stations_needed`) definidas em `data/bronze/lines/selected_lines.json`.
+* **Estações Alvo:** Lista de estações pluviométricas ativas necessárias (`stations_needed`) definidas em `data/reference/lines/selected_lines.json`.
 * **Janela Temporal:** Período correspondente à coleta da SPTrans acrescido de margem de segurança (1 dia antes e 1 dia depois), fatiado em blocos temporais de até 14 dias (`chunk_date_range`).
 * **Controle de Estado e Idempotência:** Arquivo de manifesto `data/bronze/cemaden/_manifest.jsonl` registra o ciclo de vida de cada job agendado, evitando requisições duplicadas para períodos já cobertos.
 * **Gravação Atômica:** O coletor consulta periodicamente o status do job (`/status`); quando concluído, realiza o download do pacote ZIP, inspeciona o conteúdo e salva o CSV bruto extraído em:

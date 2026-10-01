@@ -33,7 +33,7 @@ Capturar em tempo real a telemetria dos ônibus das 8 linhas selecionadas a cada
 ```
 
 ### 2.1 Alvos e Agendamento em Taxa Fixa
-- Lê `data/bronze/lines/selected_lines.json` e extrai os **16 alvos** (`codigoLinha`, `route_id`, `direction_id`).
+- Lê `data/reference/lines/selected_lines.json` e extrai os **16 alvos** (`codigoLinha`, `route_id`, `direction_id`).
 - Utiliza `time.monotonic()` para manter intervalos exatos de 60 segundos (taxa fixa), evitando o acúmulo de atrasos (*drift*). Se um ciclo demorar além do intervalo, o próximo inicia imediatamente sem acúmulo de ciclos atrasados.
 - Realiza pausas curtas de 0,2s entre alvos para evitar bloqueios na API.
 

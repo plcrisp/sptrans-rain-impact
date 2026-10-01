@@ -14,7 +14,7 @@
     "min_station_dist_m": 3000.0
   },
   "gtfs_source": {
-    "routes_geometry": "data/bronze/gtfs/routes_geometry.geojson",
+    "routes_geometry": "data/reference/gtfs/routes_geometry.geojson",
     "n_features": 2238,
     "sha256": "6a00e821dfc90cf1b90256f25a7c8e2448f29d258b72ff7b552fa9041d751270"
   },

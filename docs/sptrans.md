@@ -7,7 +7,7 @@ Este documento explica de forma direta como os dados de telemetria de ônibus da
 ## 1. Camada Bronze (Como os dados chegam)
 
 * **Fonte:** API Olho Vivo da SPTrans via endpoint `/Posicao/Linha?codigoLinha={id}`.
-* **Alvos:** 16 sentidos (8 linhas selecionadas × 2 sentidos de trajeto) definidos em `data/bronze/lines/selected_lines.json`.
+* **Alvos:** 16 sentidos (8 linhas selecionadas × 2 sentidos de trajeto) definidos em `data/reference/lines/selected_lines.json`.
 * **Cadência e Agendamento:** Coleta periódica a cada 60 segundos com controle de taxa fixa via `time.monotonic()` para evitar atraso cumulativo (*drift*).
 * **Deduplicação na Origem:** Cada resposta da API tem seu payload JSON avaliado via hash SHA-256. Se o conteúdo for idêntico ao ciclo anterior daquela linha (ônibus não atualizaram GPS), a gravação é ignorada.
 * **Persistência Atômica:** Cada resposta nova é salva em arquivo temporário `.tmp` e renomeada via `os.replace` para sua partição UTC final:

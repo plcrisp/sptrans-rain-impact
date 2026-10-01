@@ -1,6 +1,6 @@
 # Dicionário de Dados: GeoJSON de Traçados e Métricas SPTrans
 
-Este documento descreve as propriedades e regras de enriquecimento do arquivo `routes_geometry.geojson`, gerado pelo módulo `src.utils.gtfs_parser.build_gtfs_dataset` a partir dos dados estáticos do GTFS da SPTrans (`data/bronze/gtfs/`).
+Este documento descreve as propriedades e regras de enriquecimento do arquivo `routes_geometry.geojson`, gerado pelo módulo `src.utils.gtfs_parser.build_gtfs_dataset` a partir dos dados estáticos do GTFS da SPTrans (`data/reference/gtfs/`).
 
 ---
 
