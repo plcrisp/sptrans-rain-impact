@@ -7,7 +7,7 @@ load_dotenv()
 class Config:
     # Credenciais
     SPTRANS_TOKEN = os.getenv("SPTRANS_TOKEN")
-    CEMADEN_USER = os.getenv("CEMADEN_USER")
+    CEMADEN_EMAIL = os.getenv("CEMADEN_EMAIL")
     CEMADEN_PASSWORD = os.getenv("CEMADEN_PASSWORD")
 
     # Diretórios base
@@ -45,6 +45,32 @@ class Config:
     HTTP_MAX_RETRIES: int = int(os.getenv("HTTP_MAX_RETRIES", "5"))
     HTTP_BACKOFF_BASE_SECONDS: int = int(os.getenv("HTTP_BACKOFF_BASE_SECONDS", "2"))
 
+    CEMADEN_USER = os.getenv("CEMADEN_USER") or os.getenv("CEMADEN_EMAIL")
+
+    # Parâmetros da API do CEMADEN
+    CEMADEN_AUTH_URL: str = os.getenv("CEMADEN_AUTH_URL")
+    CEMADEN_SCHEDULE_URL: str = os.getenv("CEMADEN_SCHEDULE_URL")
+    CEMADEN_STATION_URL: str = os.getenv("CEMADEN_STATION_URL")
+    CEMADEN_STATUS_URL: str = os.getenv("CEMADEN_STATUS_URL")
+    CEMADEN_NETWORK_ID: str = os.getenv("CEMADEN_NETWORK_ID", "11")
+    CEMADEN_SENSOR_ID: str = os.getenv("CEMADEN_SENSOR_ID", "10")
+    CEMADEN_POLL_INTERVAL_SECONDS: int = int(os.getenv("CEMADEN_POLL_INTERVAL_SECONDS", "20"))
+    CEMADEN_JOB_TIMEOUT_SECONDS: int = int(os.getenv("CEMADEN_JOB_TIMEOUT_SECONDS", "1800"))
+    CEMADEN_MAX_PENDING_JOBS: int = int(os.getenv("CEMADEN_MAX_PENDING_JOBS", "5"))
+    CEMADEN_SOURCE_TZ: str = "America/Sao_Paulo"
+    CEMADEN_EXPECTED_CADENCE_MIN: int = 60
+    # Limite físico de plausibilidade para São Paulo: precipitação > 150mm em um intervalo é anomalamente extrema/ruído
+    RAIN_MAX_MM_PER_INTERVAL: float = float(os.getenv("RAIN_MAX_MM_PER_INTERVAL", "150.0"))
+    RAIN_SENTINEL_VALUES: tuple[float, ...] = (-999.0, -9999.0, -99.0)
+    GAP_FACTOR: float = 1.5
+
+    # Arquivos e diretórios de metadados CEMADEN
+    CEMADEN_STATION_STATUS_DIR: str = os.path.join(CEMADEN_BRONZE_DIR, "_station_status")
+    CEMADEN_MANIFEST_PATH: str = os.path.join(CEMADEN_BRONZE_DIR, "_manifest.jsonl")
+    CEMADEN_GAPS_PATH: str = os.path.join(CEMADEN_SILVER_DIR, "gaps.parquet")
+    CEMADEN_QUALITY_REPORT_PATH: str = os.path.join(CEMADEN_SILVER_DIR, "quality_report.json")
+    CEMADEN_INGEST_SUMMARY_PATH: str = os.path.join(REPORTS_DIR, "cemaden_ingest_summary.json")
+
     # Regras geográficas e de velocidade
     SP_BBOX: dict = dict(lat_min=-24.10, lat_max=-23.30, lon_min=-47.00, lon_max=-46.20)
     MAX_SPEED_KMH: int = 80
@@ -79,6 +105,7 @@ class Config:
             cls.SILVER_DIR,
             cls.SPTRANS_SILVER_DIR,
             cls.CEMADEN_SILVER_DIR,
+            cls.CEMADEN_STATION_STATUS_DIR,
             cls.REPORTS_DIR,
             cls.LOGS_DIR,
         ]
