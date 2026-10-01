@@ -81,6 +81,16 @@ class Config:
     TZ_UTC: str = "UTC"
     TZ_LOCAL: str = "America/Sao_Paulo"
 
+    # Regras e limites para a Silver da SPTrans (Task 5)
+    SPEED_MAX_KMH: float = 80.0
+    DT_MIN_S: float = 20.0
+    DT_MAX_S: float = 300.0
+    STOP_DIST_M: float = 20.0
+    PARKED_MIN_MINUTES: float = 10.0
+    STALE_MAX_MINUTES: float = 10.0
+    OFF_ROUTE_M: float = 300.0
+    PEAK_WINDOWS_SP: list = [("06:00", "09:00"), ("17:00", "20:00")]
+
     @classmethod
     def validate(cls, required: list[str]) -> None:
         """Valida se as variáveis de ambiente obrigatórias foram fornecidas."""
