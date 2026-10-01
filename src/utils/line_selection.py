@@ -73,9 +73,6 @@ def load_routes(path: str) -> gpd.GeoDataFrame:
     # Tipagem explícita das colunas
     gdf["direction_id"] = gdf["direction_id"].astype(int)
     gdf["weekday_trips"] = gdf["weekday_trips"].astype(int)
-    gdf["saturday_trips"] = gdf["saturday_trips"].astype(int)
-    gdf["sunday_trips"] = gdf["sunday_trips"].astype(int)
-    gdf["n_stops"] = gdf["n_stops"].astype(int)
     gdf["length_km"] = gdf["length_km"].astype(float)
     gdf["scheduled_speed_suspect"] = gdf["scheduled_speed_suspect"].astype(bool)
 

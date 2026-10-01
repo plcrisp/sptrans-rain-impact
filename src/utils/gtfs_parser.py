@@ -438,7 +438,14 @@ def build_gtfs_dataset(gtfs_dir, output_dir=None):
 
     if output_dir:
         output_path = os.path.join(output_dir, "routes_geometry.geojson")
-        gdf.to_file(output_path, driver="GeoJSON")
+        keep_cols = [
+            "shape_id", "route_id", "route_short_name", "route_long_name",
+            "direction_id", "length_km", "weekday_trips", "peak_headway_min",
+            "offpeak_headway_min", "scheduled_speed_kmh", "scheduled_speed_suspect",
+            "origin_stop_id", "dest_stop_id", "geometry"
+        ]
+        gdf_export = gdf[[c for c in keep_cols if c in gdf.columns]]
+        gdf_export.to_file(output_path, driver="GeoJSON")
         logger.info(f"Dataset saved successfully at: {output_path}")
 
     return gdf

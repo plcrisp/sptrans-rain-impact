@@ -71,9 +71,20 @@ def main() -> None:
     # 3. Ranquear rotas
     df_ranked = score_routes(df_routes, max_peak_headway_min=args.max_peak_headway_min)
 
-    # Salvar ranking completo
+    # Salvar ranking completo simplificado
     ranking_csv_path = Config.LINE_RANKING_PATH
-    df_ranked.to_csv(ranking_csv_path, index=False, encoding="utf-8")
+    ranking_cols = [
+        "route_id",
+        "route_long_name",
+        "coverage_pct_min",
+        "length_km_mean",
+        "weekday_trips",
+        "peak_headway_min",
+        "dominant_station_id",
+        "score",
+        "exclusion_reason",
+    ]
+    df_ranked[ranking_cols].to_csv(ranking_csv_path, index=False, encoding="utf-8")
     logger.info(f"Ranking completo de rotas salvo em: {ranking_csv_path}")
 
     # Exibir top-15
@@ -248,28 +259,24 @@ def main() -> None:
     covered_chosen_pts = chosen_points[chosen_points["covered"]]
     stations_needed = sorted(list(covered_chosen_pts["station_id"].dropna().unique()))
 
+    lines_payload = []
+    for line in chosen_lines_meta:
+        dirs = []
+        for d in line["directions"]:
+            dirs.append({
+                "direction_id": int(d["direction_id"]),
+                "codigoLinha": int(d["codigoLinha"]),
+                "sl": int(d.get("sl", 1)),
+            })
+        lines_payload.append({
+            "route_id": line["route_id"],
+            "route_long_name": line["route_long_name"],
+            "directions": dirs,
+        })
+
     selected_lines_payload = {
-        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
-        "criteria": {
-            "max_dist_m": args.max_dist_m,
-            "step_m": args.step_m,
-            "min_coverage": args.min_coverage,
-            "max_peak_headway_min": args.max_peak_headway_min,
-            "weights": {
-                "coverage": WEIGHT_COVERAGE,
-                "frequency": WEIGHT_FREQUENCY,
-                "length": WEIGHT_LENGTH,
-            },
-            "n_lines": args.n_lines,
-            "min_station_dist_m": DEFAULT_MIN_STATION_DIST_M,
-        },
-        "gtfs_source": {
-            "routes_geometry": "data/reference/gtfs/routes_geometry.geojson",
-            "n_features": len(routes_gdf),
-            "sha256": compute_file_sha256(routes_path),
-        },
-        "lines": chosen_lines_meta,
         "stations_needed": stations_needed,
+        "lines": lines_payload,
     }
 
     selected_lines_json_path = Config.SELECTED_LINES_PATH
@@ -293,27 +300,20 @@ def main() -> None:
     chosen_points["lat"] = pts_wgs84.geometry.y.astype(np.float64)
     chosen_points["lon"] = pts_wgs84.geometry.x.astype(np.float64)
 
-    # Colunas exatas requeridas
+    # Colunas essenciais requeridas
     parquet_cols = [
         "route_id",
         "direction_id",
-        "shape_id",
         "codigoLinha",
-        "point_idx",
-        "dist_along_m",
         "lat",
         "lon",
         "station_id",
-        "station_name",
         "dist_to_station_m",
-        "covered",
     ]
     df_parquet = chosen_points[parquet_cols].copy()
     df_parquet["direction_id"] = df_parquet["direction_id"].astype(np.int32)
-    df_parquet["point_idx"] = df_parquet["point_idx"].astype(np.int32)
-    df_parquet["dist_along_m"] = df_parquet["dist_along_m"].astype(np.float32)
+    df_parquet["codigoLinha"] = df_parquet["codigoLinha"].astype(np.int32)
     df_parquet["dist_to_station_m"] = df_parquet["dist_to_station_m"].astype(np.float32)
-    df_parquet["covered"] = df_parquet["covered"].astype(bool)
 
     parquet_path = Config.LINE_STATION_MAPPING_PATH
     df_parquet.to_parquet(parquet_path, engine="pyarrow", compression="snappy", index=False)
