@@ -52,6 +52,9 @@ class Config:
     CEMADEN_SCHEDULE_URL: str = os.getenv("CEMADEN_SCHEDULE_URL")
     CEMADEN_STATION_URL: str = os.getenv("CEMADEN_STATION_URL")
     CEMADEN_STATUS_URL: str = os.getenv("CEMADEN_STATUS_URL")
+    CEMADEN_CITIES_URL: str = os.getenv(
+        "CEMADEN_CITIES_URL", "https://sws.cemaden.gov.br/PED/rest/pcds-cadastro/cidades"
+    )
     CEMADEN_NETWORK_ID: str = os.getenv("CEMADEN_NETWORK_ID", "11")
     CEMADEN_SENSOR_ID: str = os.getenv("CEMADEN_SENSOR_ID", "10")
     CEMADEN_POLL_INTERVAL_SECONDS: int = int(os.getenv("CEMADEN_POLL_INTERVAL_SECONDS", "20"))

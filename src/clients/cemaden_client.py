@@ -45,6 +45,7 @@ class CemadenClient:
         schedule_url: Optional[str] = None,
         status_url: Optional[str] = None,
         station_url: Optional[str] = None,
+        cities_url: Optional[str] = None,
         timeout: Optional[int] = None,
         max_retries: Optional[int] = None,
         backoff_base: Optional[int] = None,
@@ -55,6 +56,9 @@ class CemadenClient:
         self.schedule_url = schedule_url or Config.CEMADEN_SCHEDULE_URL
         self.status_url = status_url or Config.CEMADEN_STATUS_URL
         self.station_url = station_url or Config.CEMADEN_STATION_URL
+        self.cities_url = cities_url or getattr(
+            Config, "CEMADEN_CITIES_URL", "https://sws.cemaden.gov.br/PED/rest/pcds-cadastro/cidades"
+        )
 
         self.timeout = timeout if timeout is not None else Config.HTTP_TIMEOUT_SECONDS
         self.max_retries = max_retries if max_retries is not None else Config.HTTP_MAX_RETRIES
@@ -124,6 +128,7 @@ class CemadenClient:
         params: Optional[Dict[str, Any]] = None,
         json_data: Optional[Dict[str, Any]] = None,
         stream: bool = False,
+        allow_404: bool = False,
     ) -> Tuple[requests.Response, float, int]:
         """Executa chamada HTTP com retry exponencial, jitter e renovação de token em caso de HTTP 401."""
         if not self.token:
@@ -165,7 +170,10 @@ class CemadenClient:
                     else:
                         raise CemadenAuthError(f"Falha persistente de autorização CEMADEN (HTTP 401): {resp_text[:100]}")
 
-                # 2. Erros 4xx (exceto 401) -> não faz retry
+                # 2. Erros 4xx (exceto 401)
+                if resp.status_code == 404 and allow_404:
+                    return resp, latency_s, attempts
+
                 if 400 <= resp.status_code < 500:
                     raise CemadenRequestError(
                         f"Erro de cliente HTTP {resp.status_code} em chamada CEMADEN."
@@ -268,4 +276,40 @@ class CemadenClient:
         elif not isinstance(data, list):
             data = []
 
+        return data, latency_s, attempts
+
+    def get_cities(self, uf: str = "SP") -> Tuple[List[Dict[str, Any]], float, int]:
+        """Consulta a lista de cidades cadastradas no CEMADEN para a UF informada."""
+        if not self.cities_url:
+            raise CemadenRequestError("CEMADEN_CITIES_URL não configurada.")
+
+        params = {"uf": uf, "formato": "JSON"}
+        resp, latency_s, attempts = self._request_with_retry(
+            "GET", self.cities_url, params=params, allow_404=True
+        )
+        if resp.status_code == 404:
+            return [], latency_s, attempts
+
+        data = resp.json()
+        if not isinstance(data, list):
+            data = []
+        return data, latency_s, attempts
+
+    def get_stations_by_city(self, ibge_code: Any) -> Tuple[List[Dict[str, Any]], float, int]:
+        """Consulta dados cadastrais de estações pelo código IBGE do município."""
+        if not self.station_url:
+            raise CemadenRequestError("CEMADEN_STATION_URL não configurada.")
+
+        params = {"codibge": str(ibge_code), "formato": "JSON"}
+        resp, latency_s, attempts = self._request_with_retry(
+            "GET", self.station_url, params=params, allow_404=True
+        )
+        if resp.status_code == 404:
+            return [], latency_s, attempts
+
+        data = resp.json()
+        if isinstance(data, dict):
+            data = [data]
+        elif not isinstance(data, list):
+            data = []
         return data, latency_s, attempts
