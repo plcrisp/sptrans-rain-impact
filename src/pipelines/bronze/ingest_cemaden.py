@@ -9,15 +9,19 @@ import time
 from typing import Any, Dict, List, Optional, Set, Tuple
 import uuid
 
+BASE_DIR = Path(__file__).resolve().parents[3]
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
+
 from src.clients.cemaden_client import CemadenClient
 from src.core.config import Config
 from src.utils.cemaden_bronze import (
     append_manifest_event,
     chunk_date_range,
     compute_uncovered_chunks,
-    expand_window_with_margin,
     format_dt_param,
-    get_sptrans_date_range,
+    get_sptrans_dates,
+    group_dates_into_windows,
     inspect_and_extract_zip,
     load_manifest,
     save_atomic_bronze_csv,
@@ -116,17 +120,23 @@ def main(argv: Optional[List[str]] = None) -> int:
     else:
         target_station_ids = stations_needed
 
-    # 2. Determinar janela temporal
+    # 2. Determinar janela(s) temporal(is)
     if args.start and args.end:
         start_d = datetime.date.fromisoformat(args.start)
         end_d = datetime.date.fromisoformat(args.end)
+        target_chunks = chunk_date_range(start_d, end_d, max_span_days=args.max_span_days)
         window_source = "cli"
     else:
-        sp_start, sp_end = get_sptrans_date_range()
-        start_d, end_d = expand_window_with_margin(sp_start, sp_end, margin_days=args.margin_days)
+        sp_dates = get_sptrans_dates()
+        target_chunks = group_dates_into_windows(
+            sp_dates,
+            margin_days=args.margin_days,
+            max_span_days=args.max_span_days,
+        )
+        start_d = target_chunks[0][0]
+        end_d = target_chunks[-1][1]
         window_source = "sptrans_bronze"
 
-    target_chunks = chunk_date_range(start_d, end_d, max_span_days=args.max_span_days)
     manifest_events = load_manifest()
 
     station_plan: Dict[str, List[Tuple[datetime.date, datetime.date]]] = {}
@@ -171,6 +181,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             extra={
                 "run_id": run_id,
                 "date_range": [start_d.isoformat(), end_d.isoformat()],
+                "date_windows": [[c_s.isoformat(), c_e.isoformat()] for c_s, c_e in target_chunks],
                 "window_source": window_source,
                 "stations_count": len(target_station_ids),
                 "chunks_planned": total_chunks,
@@ -369,6 +380,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             extra={
                 "run_id": run_id,
                 "date_range": [start_d.isoformat(), end_d.isoformat()],
+                "date_windows": [[c_s.isoformat(), c_e.isoformat()] for c_s, c_e in target_chunks],
                 "window_source": window_source,
                 "stations_count": len(target_station_ids),
                 "chunks_planned": total_chunks,

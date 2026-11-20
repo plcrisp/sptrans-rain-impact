@@ -12,21 +12,20 @@ from src.utils.logger import get_logger
 logger = get_logger("cemaden_bronze_utils")
 
 
-def get_sptrans_date_range(sptrans_dir: Optional[str | Path] = None) -> Tuple[datetime.date, datetime.date]:
-    """Descobre o menor e maior date=YYYY-MM-DD presente nas partições de bronze da SPTrans."""
+def get_sptrans_dates(sptrans_dir: Optional[str | Path] = None) -> List[datetime.date]:
+    """Return sorted distinct dates present in SPTrans bronze date=YYYY-MM-DD partitions."""
     base_p = Path(sptrans_dir or Config.SPTRANS_BRONZE_DIR)
     if not base_p.exists():
         raise FileNotFoundError(
             f"Diretório SPTrans bronze não encontrado: {base_p}. Forneça --start e --end explicitamente."
         )
 
-    dates: List[datetime.date] = []
+    dates: Set[datetime.date] = set()
     for d in base_p.glob("date=*"):
         if d.is_dir():
             val = d.name.replace("date=", "")
             try:
-                dt = datetime.date.fromisoformat(val)
-                dates.append(dt)
+                dates.add(datetime.date.fromisoformat(val))
             except ValueError:
                 continue
 
@@ -35,8 +34,44 @@ def get_sptrans_date_range(sptrans_dir: Optional[str | Path] = None) -> Tuple[da
             f"Nenhuma partição date=YYYY-MM-DD encontrada em {base_p}. Forneça --start e --end explicitamente."
         )
 
-    dates.sort()
+    return sorted(dates)
+
+
+def get_sptrans_date_range(sptrans_dir: Optional[str | Path] = None) -> Tuple[datetime.date, datetime.date]:
+    """Descobre o menor e maior date=YYYY-MM-DD presente nas partições de bronze da SPTrans."""
+    dates = get_sptrans_dates(sptrans_dir)
     return dates[0], dates[-1]
+
+
+def group_dates_into_windows(
+    dates: List[datetime.date],
+    margin_days: int = 1,
+    max_span_days: int = 14,
+) -> List[Tuple[datetime.date, datetime.date]]:
+    """Expand each date by margin_days, merge overlapping/adjacent ranges, and chunk by max_span_days."""
+    if not dates:
+        return []
+
+    raw_intervals = sorted(
+        (
+            d - datetime.timedelta(days=margin_days),
+            d + datetime.timedelta(days=margin_days),
+        )
+        for d in dates
+    )
+
+    merged: List[Tuple[datetime.date, datetime.date]] = [raw_intervals[0]]
+    for start_d, end_d in raw_intervals[1:]:
+        prev_start, prev_end = merged[-1]
+        if start_d <= prev_end + datetime.timedelta(days=1):
+            merged[-1] = (prev_start, max(prev_end, end_d))
+        else:
+            merged.append((start_d, end_d))
+
+    chunks: List[Tuple[datetime.date, datetime.date]] = []
+    for w_start, w_end in merged:
+        chunks.extend(chunk_date_range(w_start, w_end, max_span_days=max_span_days))
+    return chunks
 
 
 def expand_window_with_margin(
