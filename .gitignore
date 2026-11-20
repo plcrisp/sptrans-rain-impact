@@ -38,3 +38,8 @@ data/**
 
 reference/**
 tests/**
+
+# dbt artifacts
+sptrans_rain_dbt/target/
+sptrans_rain_dbt/dbt_packages/
+sptrans_rain_dbt/logs/

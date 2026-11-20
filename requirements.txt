@@ -10,3 +10,5 @@ matplotlib==3.10.8
 jupyter==1.1.1
 pytest==9.1.1
 duckdb==2.0.1
+dbt-core==1.12.7
+dbt-duckdb==1.11.1

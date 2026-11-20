@@ -26,6 +26,7 @@ class Config:
     SILVER_DIR = os.path.join(DATA_DIR, "silver")
     GOLD_DIR = os.path.join(DATA_DIR, "gold")
     GOLD_DB_PATH = os.path.join(GOLD_DIR, "project.duckdb")
+    DBT_PROJECT_DIR = os.path.join(BASE_DIR, "sptrans_rain_dbt")
 
     # Subpastas específicas por fonte
     SPTRANS_BRONZE_DIR = os.path.join(BRONZE_DIR, "sptrans")
