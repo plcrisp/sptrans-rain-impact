@@ -140,22 +140,24 @@ def enrich_sptrans_with_rain(
 
     ok_dry = merged[(merged["speed_flag"] == "ok") & (merged["rain_intensity"] == "dry")]
     if not ok_dry.empty:
-        baseline_peak = (
-            ok_dry.groupby(["route_id", "direction_id", "is_peak"], as_index=False)["speed_kmh"]
-            .mean()
-            .rename(columns={"speed_kmh": "_base_peak"})
-        )
-        baseline_dir = (
-            ok_dry.groupby(["route_id", "direction_id"], as_index=False)["speed_kmh"]
-            .mean()
-            .rename(columns={"speed_kmh": "_base_dir"})
-        )
-        merged = merged.merge(baseline_peak, on=["route_id", "direction_id", "is_peak"], how="left")
-        merged = merged.merge(baseline_dir, on=["route_id", "direction_id"], how="left")
-        merged["dry_baseline_speed_kmh"] = (
-            merged["_base_peak"].fillna(merged["_base_dir"]).round(2)
-        )
-        merged = merged.drop(columns=["_base_peak", "_base_dir"])
+        baseline_levels = [
+            (["route_id", "direction_id", "station_id", "is_peak"], "_base_station_peak"),
+            (["route_id", "direction_id", "station_id"], "_base_station"),
+            (["route_id", "direction_id", "is_peak"], "_base_route_peak"),
+            (["route_id", "direction_id"], "_base_route"),
+        ]
+        baseline_series = pd.Series(np.nan, index=merged.index, dtype="float64")
+        for group_cols, col_name in baseline_levels:
+            agg = (
+                ok_dry.groupby(group_cols, as_index=False, dropna=False)["speed_kmh"]
+                .mean()
+                .rename(columns={"speed_kmh": col_name})
+            )
+            merged = merged.merge(agg, on=group_cols, how="left")
+            baseline_series = baseline_series.fillna(merged[col_name])
+            merged = merged.drop(columns=[col_name])
+
+        merged["dry_baseline_speed_kmh"] = baseline_series.round(2)
     else:
         merged["dry_baseline_speed_kmh"] = np.nan
 
