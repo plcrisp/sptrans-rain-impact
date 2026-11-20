@@ -41,8 +41,9 @@ data/
 │   └── cemaden/              # Leituras de chuva brutas por estação (station=ID/req_inicio_fim.csv)
 │
 ├── silver/                   # 🧹 Dados limpos, padronizados e prontos para análise
-│   ├── sptrans/              # sptrans_silver_export.csv (velocidade calculada, sentido e estação)
-│   └── cemaden/              # rain_silver_export.csv (chuva em mm com marcação de falhas)
+│   ├── sptrans/              # sptrans_silver_export.{parquet,csv} (velocidade calculada, sentido e estação)
+│   ├── cemaden/              # rain_silver_export.{parquet,csv} (chuva em mm com marcação de falhas)
+│   └── sptrans_rain_enriched.parquet  # Cruzamento Silver (ônibus + chuva horária + métricas derivadas)
 │
 └── gold/                     # 📊 Camada Analítica final
     └── ...                   # Cruzamento espaço-temporal (Velocidade vs. Precipitação)
@@ -77,14 +78,34 @@ O pipeline divide-se em 4 etapas lógicas e intuitivas:
   - Filtra ruídos de GPS, coordenadas fora do município e leituras duplicadas.
   - Projeta os ônibus na geometria da rota e calcula a velocidade instantânea observada (`speed_kmh`) entre leituras sucessivas do mesmo veículo.
   - Vincula o sentido da viagem (`direction_id`) e a distância até a estação pluviométrica correspondente (`dist_to_station_m`).
-- **CEMADEN Silver (`rain_silver_export.csv`)**:
+- **CEMADEN Silver (`rain_silver_export.parquet` / `.csv`)**:
   - Padroniza os fusos horários para o horário local de São Paulo (`America/Sao_Paulo`).
   - Preserva os minutos reais das leituras (10 min ou 1h) e arredonda os valores de milímetros.
   - Detecta janelas sem dados da estação e insere uma linha sintética indicando falha de comunicação (`is_missing = True`).
+- **Enriquecimento Silver (`sptrans_rain_enriched.parquet`)**:
+  - Agrega o CEMADEN para o grão único `(station_id, hour_sp)` (acumulado horário em mm/h) para evitar multiplicação de linhas no `merge`.
+  - Faz a junção com `how="left"` e `validate="many_to_one"` partindo da SPTrans Silver (mantendo todas as leituras de ônibus).
+  - Gera atributos derivados pós-junção: `rain_intensity` (`dry`, `light`, `moderate`, `heavy`, `unknown`), `is_raining`, `dry_baseline_speed_kmh` e `speed_diff_from_dry_avg`.
+  - **Motivos de leituras sem chuva pareada (`rain_intensity = "unknown"`):** ocorrem quando a janela temporal da SPTrans ainda não foi ingerida no CEMADEN ou quando a estação apresentou falha de comunicação naquela hora (`is_missing = True`).
 
 ---
 
 ## 🚀 Como Executar
+
+### Execução pelo Orquestrador Único (`src/pipeline.py`)
+
+Depois de coletar dados na Bronze da SPTrans (`src/pipelines/bronze/collect_sptrans.py`), todo o fluxo em lote (CEMADEN Bronze → Silver SPTrans → Silver CEMADEN → Enriquecimento Silver) roda por um único comando e grava logs no console e em `pipeline.log`:
+
+```bash
+# Rodar todas as etapas prontas do início ao fim
+python src/pipeline.py
+
+# Retomar a partir de uma etapa específica (ex.: sem bater nas APIs)
+python src/pipeline.py silver_enrichment
+
+# Listar etapas declaradas
+python src/pipeline.py --list
+```
 
 ### 1. Pré-requisitos e Instalação
 
@@ -126,11 +147,12 @@ O projeto conta com notebooks interativos numerados na pasta `notebooks/`, cobri
 
 ```text
 src/
+├── pipeline.py           # Orquestrador único do pipeline em lote (com retomada por etapa)
 ├── clients/              # Clientes HTTP com retry e autenticação (SPTrans e CEMADEN)
 ├── core/                 # Configurações centralizadas e leitura do .env (config.py)
 ├── pipelines/            # Scripts de execução das camadas
 │   ├── bronze/           # Ingestão de dados brutos (select_lines, collect_sptrans, ingest_cemaden)
-│   └── silver/           # Transformação e limpeza (build_sptrans_silver, build_cemaden_silver)
+│   └── silver/           # Transformação, limpeza e enriquecimento (build_sptrans_silver, build_cemaden_silver, enrich_sptrans_rain)
 └── utils/                # Módulos especializados de apoio
     ├── cemaden_bronze.py # Manipulação de arquivos brutos e requisições da chuva
     ├── cemaden_silver.py # Limpeza, arredondamento e detecção de falhas da chuva
@@ -138,6 +160,7 @@ src/
     ├── line_selection.py # Amostragem espacial, métricas e ranking de linhas
     ├── logger.py         # Configuração de logging estruturado
     ├── provenance.py     # Registro incremental de proveniência (provenance.jsonl)
+    ├── silver_enrichment.py # Agregação horária de chuva e junção SPTrans x CEMADEN
     ├── sptrans_silver.py # Projeção geográfica e cálculo de velocidade de ônibus
     └── station_parser.py # Normalização das estações
 ```

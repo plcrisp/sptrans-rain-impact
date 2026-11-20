@@ -533,7 +533,7 @@ def test_build_sptrans_silver_records_provenance(monkeypatch, tmp_path):
     entries = _read_jsonl(silver_dir / "provenance.jsonl")
     assert len(entries) == 1
     assert entries[0]["stage"] == "build_sptrans_silver"
-    assert entries[0]["output"] == "sptrans_silver_export.csv"
+    assert entries[0]["output"] == ["sptrans_silver_export.csv", "sptrans_silver_export.parquet"]
     assert entries[0]["records"] == 2
     assert entries[0]["bronze_files_read"] == 2
     assert entries[0]["raw_readings"] == 2
@@ -565,7 +565,7 @@ def test_build_cemaden_silver_records_provenance(monkeypatch, tmp_path):
     entries = _read_jsonl(silver_dir / "provenance.jsonl")
     assert len(entries) == 1
     assert entries[0]["stage"] == "build_cemaden_silver"
-    assert entries[0]["output"] == "rain_silver_export.csv"
+    assert entries[0]["output"] == ["rain_silver_export.csv", "rain_silver_export.parquet"]
     assert entries[0]["records"] == 3
     assert entries[0]["bronze_files_read"] == 1
     assert entries[0]["stations_count"] == 1
