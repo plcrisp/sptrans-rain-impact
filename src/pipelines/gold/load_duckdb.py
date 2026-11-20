@@ -14,6 +14,7 @@ if str(BASE_DIR) not in sys.path:
 from src.core.config import Config
 from src.utils.logger import get_logger
 from src.utils.provenance import record_provenance, to_relative_path
+from src.utils.station_parser import get_sp_stations
 
 logger = get_logger("load_duckdb")
 
@@ -77,6 +78,9 @@ def load_silver_into_db(
         raise FileNotFoundError(f"Enriched Silver parquet not found: {enriched_parquet}")
     if not selected_lines_path.exists():
         raise FileNotFoundError(f"Selected lines file not found: {selected_lines_path}")
+    if not stations_path.exists():
+        logger.info("Stations catalog not found at %s; fetching from CEMADEN...", stations_path)
+        get_sp_stations(str(stations_path.parent))
     if not stations_path.exists():
         raise FileNotFoundError(f"Stations catalog not found: {stations_path}")
 
