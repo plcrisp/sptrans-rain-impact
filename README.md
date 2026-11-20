@@ -101,69 +101,31 @@ Modelagem dimensional carregada em **DuckDB** (`silver.*` → `gold.*`):
 
 ## 🚀 Como Executar
 
-### Execução pelo Orquestrador Único (`sptrans_rain_dbt/          # Modelos SQL declarativos (dbt-duckdb) da camada Gold
-├── models/
-│   ├── sources.yml        # Declaração das tabelas Silver no DuckDB
-│   ├── dim_lines.sql      # Dimensão de linhas
-│   ├── dim_stations.sql   # Dimensão de estações pluviométricas
-│   ├── dim_time.sql       # Dimensão temporal (hora/pico/fim de semana)
-│   ├── fact_bus_readings.sql
-│   └── vw_bus_rain_impact.sql
-└── profiles.yml           # Perfil local apontando para data/gold/project.duckdb
+### Execução pelo Orquestrador Único (`src/pipeline.py`)
 
-src/pipeline.py`)
-
-Depois de coletar dados na Bronze da SPTrans (`sptrans_rain_dbt/          # Modelos SQL declarativos (dbt-duckdb) da camada Gold
-├── models/
-│   ├── sources.yml        # Declaração das tabelas Silver no DuckDB
-│   ├── dim_lines.sql      # Dimensão de linhas
-│   ├── dim_stations.sql   # Dimensão de estações pluviométricas
-│   ├── dim_time.sql       # Dimensão temporal (hora/pico/fim de semana)
-│   ├── fact_bus_readings.sql
-│   └── vw_bus_rain_impact.sql
-└── profiles.yml           # Perfil local apontando para data/gold/project.duckdb
-
-src/pipelines/bronze/collect_sptrans.py`), todo o fluxo em lote (CEMADEN Bronze → Silver SPTrans → Silver CEMADEN → Enriquecimento Silver) roda por um único comando e grava logs no console e em `pipeline.log`:
+Depois de coletar dados na Bronze da SPTrans (`src/pipelines/bronze/collect_sptrans.py`), todo o fluxo em lote (CEMADEN Bronze → Silver SPTrans → Silver CEMADEN → Enriquecimento Silver → DuckDB → dbt run & test) roda por um único comando e grava logs no console e em `pipeline.log`:
 
 ```bash
 # Rodar todas as etapas prontas do início ao fim
-python sptrans_rain_dbt/          # Modelos SQL declarativos (dbt-duckdb) da camada Gold
-├── models/
-│   ├── sources.yml        # Declaração das tabelas Silver no DuckDB
-│   ├── dim_lines.sql      # Dimensão de linhas
-│   ├── dim_stations.sql   # Dimensão de estações pluviométricas
-│   ├── dim_time.sql       # Dimensão temporal (hora/pico/fim de semana)
-│   ├── fact_bus_readings.sql
-│   └── vw_bus_rain_impact.sql
-└── profiles.yml           # Perfil local apontando para data/gold/project.duckdb
-
-src/pipeline.py
+python src/pipeline.py
 
 # Retomar a partir de uma etapa específica (ex.: sem bater nas APIs)
-python sptrans_rain_dbt/          # Modelos SQL declarativos (dbt-duckdb) da camada Gold
-├── models/
-│   ├── sources.yml        # Declaração das tabelas Silver no DuckDB
-│   ├── dim_lines.sql      # Dimensão de linhas
-│   ├── dim_stations.sql   # Dimensão de estações pluviométricas
-│   ├── dim_time.sql       # Dimensão temporal (hora/pico/fim de semana)
-│   ├── fact_bus_readings.sql
-│   └── vw_bus_rain_impact.sql
-└── profiles.yml           # Perfil local apontando para data/gold/project.duckdb
-
-src/pipeline.py silver_enrichment
+python src/pipeline.py silver_enrichment
 
 # Listar etapas declaradas
-python sptrans_rain_dbt/          # Modelos SQL declarativos (dbt-duckdb) da camada Gold
-├── models/
-│   ├── sources.yml        # Declaração das tabelas Silver no DuckDB
-│   ├── dim_lines.sql      # Dimensão de linhas
-│   ├── dim_stations.sql   # Dimensão de estações pluviométricas
-│   ├── dim_time.sql       # Dimensão temporal (hora/pico/fim de semana)
-│   ├── fact_bus_readings.sql
-│   └── vw_bus_rain_impact.sql
-└── profiles.yml           # Perfil local apontando para data/gold/project.duckdb
+python src/pipeline.py --list
+```
 
-src/pipeline.py --list
+### Dashboard Interativo (Streamlit) e Documentação dbt
+
+```bash
+# Abrir o painel consumidor (leitura somente leitura em data/gold/project.duckdb)
+streamlit run dashboard/app.py
+
+# Gerar e visualizar a documentação e grafo de linhagem do dbt
+cd sptrans_rain_dbt
+dbt docs generate --profiles-dir .
+dbt docs serve --profiles-dir .
 ```
 
 ### 1. Pré-requisitos e Instalação
@@ -205,12 +167,18 @@ O projeto conta com notebooks interativos numerados na pasta `notebooks/`, cobri
 ## 📁 Estrutura do Código (`sptrans_rain_dbt/          # Modelos SQL declarativos (dbt-duckdb) da camada Gold
 ├── models/
 │   ├── sources.yml        # Declaração das tabelas Silver no DuckDB
+│   ├── schema.yml         # Documentação e testes declarativos (not_null, unique, relationships)
 │   ├── dim_lines.sql      # Dimensão de linhas
 │   ├── dim_stations.sql   # Dimensão de estações pluviométricas
 │   ├── dim_time.sql       # Dimensão temporal (hora/pico/fim de semana)
 │   ├── fact_bus_readings.sql
 │   └── vw_bus_rain_impact.sql
+├── tests/                 # Testes SQL customizados de grão composto e invariantes
 └── profiles.yml           # Perfil local apontando para data/gold/project.duckdb
+
+dashboard/                 # Painel consumidor em Streamlit (somente leitura na Gold)
+├── queries.py             # Consultas DuckDB parametrizadas (read_only=True)
+└── app.py                 # Interface visual sem SQL
 
 src/`)
 
@@ -218,12 +186,18 @@ src/`)
 sptrans_rain_dbt/          # Modelos SQL declarativos (dbt-duckdb) da camada Gold
 ├── models/
 │   ├── sources.yml        # Declaração das tabelas Silver no DuckDB
+│   ├── schema.yml         # Documentação e testes declarativos (not_null, unique, relationships)
 │   ├── dim_lines.sql      # Dimensão de linhas
 │   ├── dim_stations.sql   # Dimensão de estações pluviométricas
 │   ├── dim_time.sql       # Dimensão temporal (hora/pico/fim de semana)
 │   ├── fact_bus_readings.sql
 │   └── vw_bus_rain_impact.sql
+├── tests/                 # Testes SQL customizados de grão composto e invariantes
 └── profiles.yml           # Perfil local apontando para data/gold/project.duckdb
+
+dashboard/                 # Painel consumidor em Streamlit (somente leitura na Gold)
+├── queries.py             # Consultas DuckDB parametrizadas (read_only=True)
+└── app.py                 # Interface visual sem SQL
 
 src/
 ├── pipeline.py           # Orquestrador único do pipeline em lote (com retomada por etapa)
