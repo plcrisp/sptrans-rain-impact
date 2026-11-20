@@ -29,6 +29,8 @@ A pasta `data/` é organizada da seguinte maneira:
 
 ```text
 data/
+├── provenance.jsonl          # 🧾 Histórico consolidado de proveniência das execuções (em inglês, ignorado no Git)
+│
 ├── reference/                # 🗺️ Dados estáticos de apoio (gerados uma única vez)
 │   ├── gtfs/                 # Feeds GTFS e geometria das rotas (routes_geometry.geojson)
 │   ├── stations/             # Catálogo de estações de SP (cemaden_sp_stations.json)
@@ -45,6 +47,8 @@ data/
 └── gold/                     # 📊 Camada Analítica final
     └── ...                   # Cruzamento espaço-temporal (Velocidade vs. Precipitação)
 ```
+
+> Cada subpasta de dados (`reference/gtfs`, `reference/stations`, `reference/lines`, `bronze/sptrans`, `bronze/cemaden`, `silver/sptrans`, `silver/cemaden`) também mantém seu próprio arquivo incremental `provenance.jsonl` (em inglês, ignorado no Git) registrando origem, saídas, contagem de registros e timestamp UTC de cada execução.
 
 ---
 
@@ -133,6 +137,7 @@ src/
     ├── gtfs_parser.py    # Processamento de arquivos estáticos de transporte
     ├── line_selection.py # Amostragem espacial, métricas e ranking de linhas
     ├── logger.py         # Configuração de logging estruturado
+    ├── provenance.py     # Registro incremental de proveniência (provenance.jsonl)
     ├── sptrans_silver.py # Projeção geográfica e cálculo de velocidade de ônibus
     └── station_parser.py # Normalização das estações
 ```

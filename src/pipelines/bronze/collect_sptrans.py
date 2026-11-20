@@ -17,6 +17,7 @@ if BASE_DIR not in sys.path:
 from src.clients.sptrans_client import PositionResponse, SPTransAuthError, SPTransClient, SPTransError
 from src.core.config import Config
 from src.utils.logger import get_logger
+from src.utils.provenance import record_provenance, sanitize_url, to_relative_path
 
 logger = get_logger("collect_sptrans")
 
@@ -218,6 +219,7 @@ def run_collection(
 ) -> int:
     """Loop principal de coleta contínua da SPTrans."""
     global _stop_requested
+    _stop_requested = False
     register_signal_handlers()
 
     Config.ensure_dirs()
@@ -241,6 +243,8 @@ def run_collection(
     total_records_saved = 0
     total_cycles_executed = 0
     total_errors_encountered = 0
+    partitions_written: set[str] = set()
+    stop_reason = "completed"
 
     start_monotonic = time.monotonic()
     run_start_time = time.time()
@@ -312,6 +316,9 @@ def run_collection(
                         collected_at=now_utc,
                         base_dir=base_dir,
                     )
+                    partitions_written.add(
+                        f"date={now_utc.strftime('%Y-%m-%d')}/hour={now_utc.strftime('%H')}"
+                    )
                     last_hashes[cl] = payload_hash
                     saved_count += 1
                     total_records_saved += 1
@@ -356,14 +363,18 @@ def run_collection(
 
             # Condições de parada
             if once:
+                stop_reason = "once"
                 break
             if max_cycles and cycle_id >= max_cycles:
                 logger.info(f"Limite de ciclos atingido ({max_cycles}).")
+                stop_reason = "max_cycles"
                 break
             if duration_min and (time.time() - run_start_time) >= (duration_min * 60):
                 logger.info(f"Duração máxima atingida ({duration_min} minutos).")
+                stop_reason = "duration_reached"
                 break
             if _stop_requested:
+                stop_reason = "signal_interrupted"
                 break
 
             # Agendamento de taxa fixa (drift-free scheduling)
@@ -394,6 +405,24 @@ def run_collection(
             f"- Total de erros: {total_errors_encountered}\n"
             f"- Duração total: {total_elapsed}s\n"
             f"================================"
+        )
+        record_provenance(
+            target_dir=base_dir,
+            stage="collect_sptrans_bronze",
+            source=[
+                f"{sanitize_url(Config.SPTRANS_BASE_URL).rstrip('/')}/Posicao/Linha",
+                to_relative_path(lines_file),
+            ],
+            output=sorted(partitions_written) if partitions_written else "none",
+            records=total_records_saved,
+            extra={
+                "run_id": run_id,
+                "cycles": total_cycles_executed,
+                "targets": len(targets),
+                "errors": total_errors_encountered,
+                "duration_s": total_elapsed,
+                "stop_reason": "signal_interrupted" if _stop_requested else stop_reason,
+            },
         )
 
     return 0

@@ -6,6 +6,7 @@ import pandas as pd
 
 from src.core.config import Config
 from src.utils.logger import get_logger
+from src.utils.provenance import record_provenance, to_relative_path
 from src.utils.sptrans_silver import (
     add_station,
     add_time_columns,
@@ -83,6 +84,24 @@ def run_pipeline() -> int:
 
     df_final[export_cols].to_csv(csv_dest, index=False)
     logger.info(f"Arquivo Silver gerado com sucesso: {csv_dest} ({len(df_final)} linhas).")
+
+    speed_flag_counts = {
+        str(k): int(v) for k, v in df_final["speed_flag"].value_counts(dropna=False).items()
+    }
+    record_provenance(
+        target_dir=silver_dir,
+        stage="build_sptrans_silver",
+        source=[to_relative_path(bronze_dir), to_relative_path(mapping_path)],
+        output=csv_dest.name,
+        records=len(df_final),
+        extra={
+            "bronze_files_read": stats["files_read"],
+            "bronze_files_corrupted": stats["files_corrupted"],
+            "raw_readings": len(df_raw),
+            "discarded": discard_counts,
+            "speed_flags": speed_flag_counts,
+        },
+    )
     return 0
 
 

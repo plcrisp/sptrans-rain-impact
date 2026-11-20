@@ -7,6 +7,7 @@ import pandas as pd
 from shapely.geometry import LineString
 
 from src.utils.logger import get_logger
+from src.utils.provenance import record_provenance, to_relative_path
 
 logger = get_logger("gtfs_parser")
 
@@ -440,5 +441,19 @@ def build_gtfs_dataset(gtfs_dir, output_dir=None):
         output_path = os.path.join(output_dir, "routes_geometry.geojson")
         gdf.to_file(output_path, driver="GeoJSON")
         logger.info(f"Dataset saved successfully at: {output_path}")
+
+        gtfs_zip = os.path.join(gtfs_dir, "gtfs.zip")
+        source_ref = to_relative_path(gtfs_zip if os.path.exists(gtfs_zip) else gtfs_dir)
+        record_provenance(
+            target_dir=output_dir,
+            stage="build_gtfs_dataset",
+            source=source_ref,
+            output="routes_geometry.geojson",
+            records=len(gdf),
+            extra={
+                "aux_files_loaded": len(missing_aux) == 0,
+                "missing_aux_files": missing_aux,
+            },
+        )
 
     return gdf

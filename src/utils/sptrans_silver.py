@@ -48,6 +48,8 @@ def load_bronze(root: Union[Path, str]) -> Tuple[pd.DataFrame, Dict[str, int]]:
     for f in root_path.glob("**/*"):
         if f.is_dir():
             continue
+        if f.name == "provenance.jsonl":
+            continue
         if f.suffix.lower() != ".json":
             files_ignored += 1
             continue

@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 from src.clients.cemaden_client import CemadenClient
 from src.core.config import Config
 from src.utils.logger import get_logger
+from src.utils.provenance import record_provenance, sanitize_url
 
 logger = get_logger("station_parser")
 
@@ -83,5 +84,23 @@ def get_sp_stations(
             encoding="utf-8",
         )
         logger.info(f"Estações salvas com sucesso em: {output_file.resolve()}")
+
+        active_count = sum(1 for s in normalized_stations if s.get("status") == "Active")
+        offline_count = len(normalized_stations) - active_count
+        station_url = sanitize_url(getattr(cemaden, "station_url", None)) or "cemaden_api"
+        record_provenance(
+            target_dir=output_dir,
+            stage="fetch_cemaden_stations",
+            source=station_url,
+            output=output_file.name,
+            records=len(normalized_stations),
+            extra={
+                "city": target_city["cidade"],
+                "state": STATE,
+                "ibge_code": str(ibge_code),
+                "active_stations": active_count,
+                "offline_stations": offline_count,
+            },
+        )
 
     return normalized_stations

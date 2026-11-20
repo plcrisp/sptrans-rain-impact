@@ -33,6 +33,7 @@ from src.utils.line_selection import (
     score_routes,
 )
 from src.utils.logger import get_logger
+from src.utils.provenance import record_provenance, sanitize_url, to_relative_path
 
 logger = get_logger("select_lines")
 
@@ -97,6 +98,19 @@ def main() -> None:
     print("=" * 80 + "\n")
 
     if args.skip_api:
+        record_provenance(
+            target_dir=Config.LINES_REFERENCE_DIR,
+            stage="select_lines",
+            source=[to_relative_path(routes_path), to_relative_path(stations_path)],
+            output=os.path.basename(ranking_csv_path),
+            records=len(df_ranked),
+            extra={
+                "skip_api": True,
+                "max_dist_m": args.max_dist_m,
+                "step_m": args.step_m,
+                "max_peak_headway_min": args.max_peak_headway_min,
+            },
+        )
         logger.info("Modo --skip-api acionado. Processamento concluído com sucesso.")
         return
 
@@ -317,6 +331,32 @@ def main() -> None:
     parquet_path = Config.LINE_STATION_MAPPING_PATH
     df_parquet.to_parquet(parquet_path, engine="pyarrow", compression="snappy", index=False)
     logger.info(f"Mapeamento trajeto-estação salvo em: {parquet_path}")
+
+    record_provenance(
+        target_dir=Config.LINES_REFERENCE_DIR,
+        stage="select_lines",
+        source=[
+            to_relative_path(routes_path),
+            to_relative_path(stations_path),
+            sanitize_url(Config.SPTRANS_BASE_URL),
+        ],
+        output=[
+            os.path.basename(ranking_csv_path),
+            os.path.basename(selected_lines_json_path),
+            os.path.basename(parquet_path),
+        ],
+        records=len(chosen_lines_meta),
+        extra={
+            "skip_api": False,
+            "ranked_routes": len(df_ranked),
+            "stations_needed": len(stations_needed),
+            "mapping_points": len(df_parquet),
+            "n_lines_target": args.n_lines,
+            "max_dist_m": args.max_dist_m,
+            "min_coverage": args.min_coverage,
+            "max_peak_headway_min": args.max_peak_headway_min,
+        },
+    )
 
     t_end = time.time()
     logger.info(f"Pipeline select_lines concluído com sucesso em {t_end - t_start:.2f}s!")

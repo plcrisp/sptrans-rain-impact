@@ -23,6 +23,7 @@ from src.utils.cemaden_bronze import (
     save_atomic_bronze_csv,
 )
 from src.utils.logger import get_logger
+from src.utils.provenance import record_provenance, sanitize_url, to_relative_path
 
 logger = get_logger("ingest_cemaden")
 
@@ -99,6 +100,9 @@ def load_target_stations() -> Tuple[List[str], Dict[str, str]]:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    global _interrupted
+    _interrupted = False
+
     args = parse_args(argv)
     Config.ensure_dirs()
     run_id = f"cemaden_{uuid.uuid4().hex[:6]}"
@@ -116,9 +120,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.start and args.end:
         start_d = datetime.date.fromisoformat(args.start)
         end_d = datetime.date.fromisoformat(args.end)
+        window_source = "cli"
     else:
         sp_start, sp_end = get_sptrans_date_range()
         start_d, end_d = expand_window_with_margin(sp_start, sp_end, margin_days=args.margin_days)
+        window_source = "sptrans_bronze"
 
     target_chunks = chunk_date_range(start_d, end_d, max_span_days=args.max_span_days)
     manifest_events = load_manifest()
@@ -140,8 +146,42 @@ def main(argv: Optional[List[str]] = None) -> int:
         logger.info(f"Dry-run: {len(target_station_ids)} estações, {total_chunks} blocos pendentes de download.")
         return 0
 
+    sources: List[str] = [
+        sanitize_url(Config.CEMADEN_SCHEDULE_URL) or "cemaden_api",
+        to_relative_path(Config.SELECTED_LINES_PATH),
+    ]
+    if window_source == "sptrans_bronze":
+        sources.append(to_relative_path(Config.SPTRANS_BRONZE_DIR))
+
+    downloaded_files: List[str] = []
+    total_rows_downloaded = 0
+    no_data_count = 0
+    error_count = 0
+    timeout_count = 0
+    rejected_or_expired_count = 0
+
     if total_chunks == 0 and not any(ev.get("status") == "pending" for ev in manifest_events):
         logger.info("Todos os blocos da janela já estão cobertos no bronze.")
+        record_provenance(
+            target_dir=Config.CEMADEN_BRONZE_DIR,
+            stage="ingest_cemaden_bronze",
+            source=sources,
+            output="none",
+            records=0,
+            extra={
+                "run_id": run_id,
+                "date_range": [start_d.isoformat(), end_d.isoformat()],
+                "window_source": window_source,
+                "stations_count": len(target_station_ids),
+                "chunks_planned": total_chunks,
+                "files_downloaded": 0,
+                "no_data": 0,
+                "errors": 0,
+                "timeouts": 0,
+                "rejected_or_expired": 0,
+                "status": "up_to_date",
+            },
+        )
         return 0
 
     client = CemadenClient()
@@ -180,132 +220,166 @@ def main(argv: Optional[List[str]] = None) -> int:
     q_idx = 0
     total_to_schedule = len(queue)
 
-    while (q_idx < total_to_schedule or pending_jobs) and not _interrupted:
-        while len(pending_jobs) < max_pending and q_idx < total_to_schedule and not _interrupted:
-            req = queue[q_idx]
-            q_idx += 1
-            sid = req["station_id"]
+    try:
+        while (q_idx < total_to_schedule or pending_jobs) and not _interrupted:
+            while len(pending_jobs) < max_pending and q_idx < total_to_schedule and not _interrupted:
+                req = queue[q_idx]
+                q_idx += 1
+                sid = req["station_id"]
 
-            try:
-                job_id, _, _ = client.schedule(
-                    station_id=sid,
-                    uf=req["uf"],
-                    start_dt=req["start_dt"],
-                    end_dt=req["end_dt"],
-                )
-                now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
-                append_manifest_event(
-                    {
-                        "ts": now_utc,
-                        "station_id": sid,
-                        "job_id": job_id,
-                        "status": "pending",
-                        "start_str": req["start_dt"],
-                        "end_str": req["end_dt"],
-                        "uf": req["uf"],
-                    }
-                )
-                pending_jobs[job_id] = {**req, "scheduled_at": time.time()}
-                time.sleep(1.5)
-            except Exception as e:
-                logger.error(f"Erro ao agendar estação {sid}: {e}")
-                now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
-                append_manifest_event(
-                    {
-                        "ts": now_utc,
-                        "station_id": sid,
-                        "job_id": None,
-                        "status": "error",
-                        "start_str": req["start_dt"],
-                        "end_str": req["end_dt"],
-                        "error": str(e),
-                    }
-                )
-
-        if not pending_jobs:
-            break
-
-        time.sleep(poll_interval)
-        try:
-            jobs_list, _, _ = client.list_jobs()
-            jobs_by_id = {int(j.get("id")): j for j in jobs_list if j.get("id") is not None}
-        except Exception:
-            jobs_by_id = {}
-
-        now_time = time.time()
-        finished = []
-
-        for jid, job_info in list(pending_jobs.items()):
-            sid = job_info["station_id"]
-            item = jobs_by_id.get(jid)
-            desc = item.get("status", {}).get("description") if item else None
-            link = item.get("link") if item else None
-
-            if now_time - job_info["scheduled_at"] > job_timeout and desc != "CONCLUIDA":
-                append_manifest_event({"ts": datetime.datetime.now(datetime.timezone.utc).isoformat(), "station_id": sid, "job_id": jid, "status": "timeout"})
-                finished.append(jid)
-                continue
-
-            if desc == "CONCLUIDA" and link:
                 try:
-                    zip_bytes, _, _ = client.download(link)
-                    _, csv_bytes, n_rows, reason = inspect_and_extract_zip(zip_bytes)
-
-                    if csv_bytes is not None:
-                        csv_path = save_atomic_bronze_csv(
-                            station_id=sid,
-                            start_dt=job_info["start_dt"],
-                            end_dt=job_info["end_dt"],
-                            csv_bytes=csv_bytes,
-                        )
-                        rel_path = str(csv_path.relative_to(Config.BASE_DIR)).replace("\\", "/")
-                        append_manifest_event(
-                            {
-                                "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                                "station_id": sid,
-                                "job_id": jid,
-                                "status": "ok",
-                                "start_str": job_info["start_dt"],
-                                "end_str": job_info["end_dt"],
-                                "file_path": rel_path,
-                                "n_rows": n_rows,
-                            }
-                        )
-                        logger.info(f"Dados baixados para {sid}: {csv_path.name} ({n_rows} linhas).")
-                    else:
-                        append_manifest_event(
-                            {
-                                "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                                "station_id": sid,
-                                "job_id": jid,
-                                "status": "no_data",
-                                "start_str": job_info["start_dt"],
-                                "end_str": job_info["end_dt"],
-                                "reason": reason or "no_csv",
-                            }
-                        )
-                        logger.warning(f"Estação {sid} concluída sem dados ({reason}).")
-
-                    finished.append(jid)
+                    job_id, _, _ = client.schedule(
+                        station_id=sid,
+                        uf=req["uf"],
+                        start_dt=req["start_dt"],
+                        end_dt=req["end_dt"],
+                    )
+                    now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                    append_manifest_event(
+                        {
+                            "ts": now_utc,
+                            "station_id": sid,
+                            "job_id": job_id,
+                            "status": "pending",
+                            "start_str": req["start_dt"],
+                            "end_str": req["end_dt"],
+                            "uf": req["uf"],
+                        }
+                    )
+                    pending_jobs[job_id] = {**req, "scheduled_at": time.time()}
+                    time.sleep(1.5)
                 except Exception as e:
-                    logger.error(f"Erro no download do job {jid} ({sid}): {e}")
+                    error_count += 1
+                    logger.error(f"Erro ao agendar estação {sid}: {e}")
+                    now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                    append_manifest_event(
+                        {
+                            "ts": now_utc,
+                            "station_id": sid,
+                            "job_id": None,
+                            "status": "error",
+                            "start_str": req["start_dt"],
+                            "end_str": req["end_dt"],
+                            "error": str(e),
+                        }
+                    )
+
+            if not pending_jobs:
+                break
+
+            time.sleep(poll_interval)
+            try:
+                jobs_list, _, _ = client.list_jobs()
+                jobs_by_id = {int(j.get("id")): j for j in jobs_list if j.get("id") is not None}
+            except Exception:
+                jobs_by_id = {}
+
+            now_time = time.time()
+            finished = []
+
+            for jid, job_info in list(pending_jobs.items()):
+                sid = job_info["station_id"]
+                item = jobs_by_id.get(jid)
+                desc = item.get("status", {}).get("description") if item else None
+                link = item.get("link") if item else None
+
+                if now_time - job_info["scheduled_at"] > job_timeout and desc != "CONCLUIDA":
+                    timeout_count += 1
+                    append_manifest_event({"ts": datetime.datetime.now(datetime.timezone.utc).isoformat(), "station_id": sid, "job_id": jid, "status": "timeout"})
+                    finished.append(jid)
+                    continue
+
+                if desc == "CONCLUIDA" and link:
+                    try:
+                        zip_bytes, _, _ = client.download(link)
+                        _, csv_bytes, n_rows, reason = inspect_and_extract_zip(zip_bytes)
+
+                        if csv_bytes is not None:
+                            csv_path = save_atomic_bronze_csv(
+                                station_id=sid,
+                                start_dt=job_info["start_dt"],
+                                end_dt=job_info["end_dt"],
+                                csv_bytes=csv_bytes,
+                            )
+                            rel_path = to_relative_path(csv_path)
+                            downloaded_files.append(f"station={sid}/{csv_path.name}")
+                            total_rows_downloaded += n_rows
+                            append_manifest_event(
+                                {
+                                    "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                                    "station_id": sid,
+                                    "job_id": jid,
+                                    "status": "ok",
+                                    "start_str": job_info["start_dt"],
+                                    "end_str": job_info["end_dt"],
+                                    "file_path": rel_path,
+                                    "n_rows": n_rows,
+                                }
+                            )
+                            logger.info(f"Dados baixados para {sid}: {csv_path.name} ({n_rows} linhas).")
+                        else:
+                            no_data_count += 1
+                            append_manifest_event(
+                                {
+                                    "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                                    "station_id": sid,
+                                    "job_id": jid,
+                                    "status": "no_data",
+                                    "start_str": job_info["start_dt"],
+                                    "end_str": job_info["end_dt"],
+                                    "reason": reason or "no_csv",
+                                }
+                            )
+                            logger.warning(f"Estação {sid} concluída sem dados ({reason}).")
+
+                        finished.append(jid)
+                    except Exception as e:
+                        error_count += 1
+                        logger.error(f"Erro no download do job {jid} ({sid}): {e}")
+                        finished.append(jid)
+
+                elif desc in ("REJEITADA", "EXPIRADA"):
+                    rejected_or_expired_count += 1
+                    append_manifest_event(
+                        {
+                            "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                            "station_id": sid,
+                            "job_id": jid,
+                            "status": desc.lower(),
+                            "start_str": job_info["start_dt"],
+                            "end_str": job_info["end_dt"],
+                        }
+                    )
                     finished.append(jid)
 
-            elif desc in ("REJEITADA", "EXPIRADA"):
-                append_manifest_event(
-                    {
-                        "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-                        "station_id": sid,
-                        "job_id": jid,
-                        "status": desc.lower(),
-                        "start_str": job_info["start_dt"],
-                        "end_str": job_info["end_dt"],
-                    }
-                )
-                finished.append(jid)
-
-        for fid in finished:
-            pending_jobs.pop(fid, None)
+            for fid in finished:
+                pending_jobs.pop(fid, None)
+    finally:
+        status = (
+            "interrupted"
+            if _interrupted
+            else ("up_to_date" if total_chunks == 0 and not downloaded_files else "completed")
+        )
+        record_provenance(
+            target_dir=Config.CEMADEN_BRONZE_DIR,
+            stage="ingest_cemaden_bronze",
+            source=sources,
+            output=downloaded_files if downloaded_files else "none",
+            records=total_rows_downloaded,
+            extra={
+                "run_id": run_id,
+                "date_range": [start_d.isoformat(), end_d.isoformat()],
+                "window_source": window_source,
+                "stations_count": len(target_station_ids),
+                "chunks_planned": total_chunks,
+                "files_downloaded": len(downloaded_files),
+                "no_data": no_data_count,
+                "errors": error_count,
+                "timeouts": timeout_count,
+                "rejected_or_expired": rejected_or_expired_count,
+                "status": status,
+            },
+        )
 
     logger.info("Ingestão bronze do CEMADEN concluída com sucesso.")
     return 0

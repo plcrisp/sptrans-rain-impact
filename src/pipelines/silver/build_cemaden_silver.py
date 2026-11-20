@@ -9,6 +9,7 @@ import pandas as pd
 from src.core.config import Config
 from src.utils.cemaden_silver import generate_clean_hourly_export, parse_raw_bronze_csv
 from src.utils.logger import get_logger
+from src.utils.provenance import record_provenance, to_relative_path
 
 logger = get_logger("build_cemaden_silver")
 
@@ -45,6 +46,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     station_filter = set(args.stations.split(",")) if args.stations else None
 
     parsed_dfs = []
+    bronze_files_read = 0
     # Lê todos os CSVs disponíveis nas pastas station=*
     for st_dir in sorted(bronze_dir.glob("station=*")):
         sid = st_dir.name.replace("station=", "")
@@ -52,6 +54,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             continue
 
         for csv_file in sorted(st_dir.glob("req_*.csv")):
+            bronze_files_read += 1
             with open(csv_file, "rb") as f:
                 csv_bytes = f.read()
             df_st = parse_raw_bronze_csv(csv_bytes, station_id=sid)
@@ -70,6 +73,35 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     df_clean.to_csv(csv_dest, index=False)
     logger.info(f"Arquivo Silver gerado com sucesso: {csv_dest} ({len(df_clean)} linhas).")
+
+    missing_rows = (
+        int(df_clean["is_missing"].sum())
+        if "is_missing" in df_clean.columns and not df_clean.empty
+        else 0
+    )
+    real_rows = len(df_clean) - missing_rows
+    stations_in_output = (
+        int(df_clean["station_id"].nunique())
+        if "station_id" in df_clean.columns and not df_clean.empty
+        else 0
+    )
+    sources = [to_relative_path(bronze_dir)] + (
+        [to_relative_path(sel_path)] if sel_path.exists() else []
+    )
+    record_provenance(
+        target_dir=silver_dir,
+        stage="build_cemaden_silver",
+        source=sources,
+        output=csv_dest.name,
+        records=len(df_clean),
+        extra={
+            "bronze_files_read": bronze_files_read,
+            "stations_count": stations_in_output,
+            "real_rows": real_rows,
+            "missing_rows": missing_rows,
+            "station_filter": sorted(station_filter) if station_filter else None,
+        },
+    )
     return 0
 
 
