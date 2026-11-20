@@ -87,15 +87,17 @@ def main() -> None:
     df_ranked[ranking_cols].to_csv(ranking_csv_path, index=False, encoding="utf-8")
     logger.info(f"Ranking completo de rotas salvo em: {ranking_csv_path}")
 
-    # Exibir top-15
-    print("\n" + "=" * 80)
-    print("TOP 15 LINHAS CANDIDATAS (RANKING MULTI-CRITÉRIO)")
-    print("=" * 80)
+    # Exibir top-15 via logger (console + pipeline.log)
     top_15 = df_ranked.head(15)[
         ["route_id", "coverage_pct_min", "weekday_trips", "peak_headway_min", "dominant_station_id", "score"]
     ]
-    print(top_15.to_string(index=False))
-    print("=" * 80 + "\n")
+    logger.info(
+        "\n%s\nTOP 15 LINHAS CANDIDATAS (RANKING MULTI-CRITÉRIO)\n%s\n%s\n%s",
+        "=" * 80,
+        "=" * 80,
+        top_15.to_string(index=False),
+        "=" * 80,
+    )
 
     if args.skip_api:
         record_provenance(

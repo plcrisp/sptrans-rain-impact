@@ -12,6 +12,7 @@ class Config:
 
     # Diretórios base
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    PIPELINE_LOG_PATH = os.path.join(BASE_DIR, "pipeline.log")
     DATA_DIR = os.path.join(BASE_DIR, "data")
     RAW_DATA_DIR = os.path.join(DATA_DIR, "bronze")
     REFERENCE_DIR = os.path.join(DATA_DIR, "reference")
