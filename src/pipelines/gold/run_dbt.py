@@ -40,19 +40,30 @@ def run_dbt(select: Optional[str] = None) -> int:
             f"DuckDB database not found at {db_path}. Run gold_load first."
         )
 
-    cmd = _resolve_dbt_command() + [
+    cmd_run = _resolve_dbt_command() + [
         "run",
         "--profiles-dir",
         str(dbt_dir),
     ]
     if select:
-        cmd.extend(["--select", select])
+        cmd_run.extend(["--select", select])
+
+    cmd_test = _resolve_dbt_command() + [
+        "test",
+        "--profiles-dir",
+        str(dbt_dir),
+    ]
+    if select:
+        cmd_test.extend(["--select", select])
 
     env = os.environ.copy()
     env["GOLD_DB_PATH"] = db_path.as_posix()
 
     logger.info("Running dbt models in %s (target db=%s)...", dbt_dir, db_path)
-    subprocess.run(cmd, cwd=str(dbt_dir), env=env, check=True)
+    subprocess.run(cmd_run, cwd=str(dbt_dir), env=env, check=True)
+
+    logger.info("Running dbt data tests in %s...", dbt_dir)
+    subprocess.run(cmd_test, cwd=str(dbt_dir), env=env, check=True)
 
     con = connect_db(db_path)
     try:

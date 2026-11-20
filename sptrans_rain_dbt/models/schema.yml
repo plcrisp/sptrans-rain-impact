@@ -1,0 +1,165 @@
+version: 2
+
+models:
+  - name: dim_lines
+    description: "Selected SPTrans bus routes and operational directions."
+    columns:
+      - name: route_code
+        description: "SPTrans Olho Vivo internal line direction code (codigoLinha)."
+        data_tests:
+          - not_null
+          - unique
+      - name: route_id
+        description: "Official GTFS route identifier (e.g., 2202-10)."
+        data_tests:
+          - not_null
+      - name: route_name
+        description: "Human-readable route origin and destination name."
+        data_tests:
+          - not_null
+      - name: direction_id
+        description: "GTFS direction identifier (0 or 1)."
+        data_tests:
+          - not_null
+      - name: service_direction_code
+        description: "SPTrans API direction code (sl: 1 or 2)."
+
+  - name: dim_stations
+    description: "CEMADEN pluviometric stations in São Paulo."
+    columns:
+      - name: station_id
+        description: "Unique CEMADEN station identifier (codestacao)."
+        data_tests:
+          - not_null
+          - unique
+      - name: station_name
+        description: "Station name."
+        data_tests:
+          - not_null
+      - name: city
+        description: "Municipality name."
+      - name: state
+        description: "Brazilian state code (UF)."
+      - name: latitude
+        description: "Station latitude (WGS84)."
+      - name: longitude
+        description: "Station longitude (WGS84)."
+      - name: status
+        description: "Operational status inferred from last data transmission."
+        data_tests:
+          - not_null
+      - name: station_type
+        description: "CEMADEN sensor/station category."
+
+  - name: dim_time
+    description: "Hourly time dimension in America/Sao_Paulo local time."
+    columns:
+      - name: hour_key
+        description: "Truncated local hour timestamp used as join key."
+        data_tests:
+          - not_null
+          - unique
+      - name: date_sp
+        description: "Local calendar date."
+        data_tests:
+          - not_null
+      - name: hour_of_day
+        description: "Hour of day (0-23)."
+        data_tests:
+          - not_null
+      - name: day_of_week
+        description: "ISO day of week (1=Monday .. 7=Sunday)."
+        data_tests:
+          - not_null
+      - name: is_weekend
+        description: "True when day_of_week is Saturday or Sunday."
+        data_tests:
+          - not_null
+      - name: is_peak
+        description: "True during weekday peak hours (06:00-09:00 and 17:00-20:00)."
+        data_tests:
+          - not_null
+
+  - name: fact_bus_readings
+    description: "Bus GPS readings enriched with hourly rainfall from the nearest CEMADEN station. Grain: one reading per (vehicle_id, route_code, observed_at)."
+    columns:
+      - name: vehicle_id
+        description: "SPTrans vehicle identifier."
+        data_tests:
+          - not_null
+      - name: route_code
+        description: "Foreign key to dim_lines.route_code."
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_lines')
+                field: route_code
+      - name: station_id
+        description: "Foreign key to dim_stations.station_id."
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_stations')
+                field: station_id
+      - name: hour_key
+        description: "Foreign key to dim_time.hour_key."
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_time')
+                field: hour_key
+      - name: observed_at
+        description: "Local timestamp (America/Sao_Paulo) of the vehicle GPS reading."
+        data_tests:
+          - not_null
+      - name: speed_kmh
+        description: "Computed instantaneous bus speed in km/h (populated when speed_flag = 'ok')."
+      - name: speed_flag
+        description: "Speed quality/state classification."
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['ok', 'first_reading', 'dt_out_of_range', 'parked', 'too_fast']
+      - name: distance_to_station_m
+        description: "Distance in meters from the bus reading to the mapped CEMADEN station."
+      - name: precipitation_mm
+        description: "Hourly accumulated rainfall in mm at the mapped station."
+      - name: is_raining
+        description: "True when precipitation_mm > 0, False when 0, null when unknown."
+      - name: rain_is_missing
+        description: "True when no valid rainfall reading was available for the hour."
+        data_tests:
+          - not_null
+      - name: rain_intensity
+        description: "Hourly rainfall intensity bucket."
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['dry', 'light', 'moderate', 'heavy', 'unknown']
+      - name: dry_baseline_speed_kmh
+        description: "Mean dry-weather speed (km/h) for the same route, direction, and peak flag."
+      - name: speed_diff_from_dry_avg
+        description: "Difference between observed speed_kmh and dry_baseline_speed_kmh."
+
+  - name: vw_bus_rain_impact
+    description: "Denormalized analytical view joining fact_bus_readings with dim_lines, dim_stations, and dim_time."
+    columns:
+      - name: vehicle_id
+        description: "SPTrans vehicle identifier."
+      - name: route_id
+        description: "Official GTFS route identifier."
+      - name: station_name
+        description: "Nearest CEMADEN pluviometric station name."
+      - name: speed_kmh
+        description: "Observed bus speed in km/h."
+      - name: precipitation_mm
+        description: "Hourly accumulated rainfall in mm."
+      - name: rain_intensity
+        description: "Hourly rainfall intensity classification."
+      - name: speed_diff_from_dry_avg
+        description: "Observed speed difference relative to dry-weather baseline."
