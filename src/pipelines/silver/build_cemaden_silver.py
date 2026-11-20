@@ -66,13 +66,30 @@ def main(argv: Optional[List[str]] = None) -> int:
     # Gera a exportação limpa com preservação de granularidade e preenchimento de horas faltantes
     df_clean = generate_clean_hourly_export(df_consolidated, all_station_ids=all_needed)
 
-    # Grava literalmente só o rain_silver_export.csv
+    # Grava CSV (compatibilidade) e Parquet (preserva tipos para enriquecimento e DuckDB)
     silver_dir = Path(Config.CEMADEN_SILVER_DIR)
     silver_dir.mkdir(parents=True, exist_ok=True)
     csv_dest = silver_dir / "rain_silver_export.csv"
+    parquet_dest = silver_dir / "rain_silver_export.parquet"
 
     df_clean.to_csv(csv_dest, index=False)
-    logger.info(f"Arquivo Silver gerado com sucesso: {csv_dest} ({len(df_clean)} linhas).")
+
+    df_parquet = df_clean.copy()
+    if not df_parquet.empty:
+        df_parquet["timestamp_sp"] = pd.to_datetime(
+            df_parquet["timestamp_sp"], format="%Y-%m-%d %H:%M:%S"
+        ).dt.tz_localize(Config.CEMADEN_SOURCE_TZ, ambiguous="infer", nonexistent="shift_forward")
+        df_parquet["rain_mm"] = pd.to_numeric(df_parquet["rain_mm"], errors="coerce").astype("float64")
+        df_parquet["is_missing"] = df_parquet["is_missing"].astype(bool)
+    else:
+        df_parquet["timestamp_sp"] = pd.Series(dtype=f"datetime64[ns, {Config.CEMADEN_SOURCE_TZ}]")
+        df_parquet["rain_mm"] = pd.Series(dtype="float64")
+        df_parquet["is_missing"] = pd.Series(dtype="bool")
+    df_parquet.to_parquet(parquet_dest, engine="pyarrow", compression="snappy", index=False)
+
+    logger.info(
+        f"Arquivos Silver gerados com sucesso: {csv_dest} e {parquet_dest} ({len(df_clean)} linhas)."
+    )
 
     missing_rows = (
         int(df_clean["is_missing"].sum())
@@ -92,7 +109,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         target_dir=silver_dir,
         stage="build_cemaden_silver",
         source=sources,
-        output=csv_dest.name,
+        output=[csv_dest.name, parquet_dest.name],
         records=len(df_clean),
         extra={
             "bronze_files_read": bronze_files_read,

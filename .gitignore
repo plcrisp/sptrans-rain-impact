@@ -35,3 +35,6 @@ data/**
 !data/reference/lines/line_ranking.csv
 
 *.log
+
+reference/**
+tests/**

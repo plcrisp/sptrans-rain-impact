@@ -81,9 +81,14 @@ def run_pipeline() -> int:
     silver_dir = Path(Config.SPTRANS_SILVER_DIR)
     silver_dir.mkdir(parents=True, exist_ok=True)
     csv_dest = silver_dir / "sptrans_silver_export.csv"
+    parquet_dest = silver_dir / "sptrans_silver_export.parquet"
 
-    df_final[export_cols].to_csv(csv_dest, index=False)
-    logger.info(f"Arquivo Silver gerado com sucesso: {csv_dest} ({len(df_final)} linhas).")
+    df_export = df_final[export_cols]
+    df_export.to_csv(csv_dest, index=False)
+    df_export.to_parquet(parquet_dest, engine="pyarrow", compression="snappy", index=False)
+    logger.info(
+        f"Arquivos Silver gerados com sucesso: {csv_dest} e {parquet_dest} ({len(df_final)} linhas)."
+    )
 
     speed_flag_counts = {
         str(k): int(v) for k, v in df_final["speed_flag"].value_counts(dropna=False).items()
@@ -92,7 +97,7 @@ def run_pipeline() -> int:
         target_dir=silver_dir,
         stage="build_sptrans_silver",
         source=[to_relative_path(bronze_dir), to_relative_path(mapping_path)],
-        output=csv_dest.name,
+        output=[csv_dest.name, parquet_dest.name],
         records=len(df_final),
         extra={
             "bronze_files_read": stats["files_read"],

@@ -29,6 +29,9 @@ class Config:
     CEMADEN_BRONZE_DIR = os.path.join(BRONZE_DIR, "cemaden")
     SPTRANS_SILVER_DIR = os.path.join(SILVER_DIR, "sptrans")
     CEMADEN_SILVER_DIR = os.path.join(SILVER_DIR, "cemaden")
+    SPTRANS_SILVER_PARQUET_PATH = os.path.join(SPTRANS_SILVER_DIR, "sptrans_silver_export.parquet")
+    CEMADEN_SILVER_PARQUET_PATH = os.path.join(CEMADEN_SILVER_DIR, "rain_silver_export.parquet")
+    ENRICHED_SILVER_PARQUET_PATH = os.path.join(SILVER_DIR, "sptrans_rain_enriched.parquet")
 
     # Arquivos de dados de referência
     SELECTED_LINES_PATH = os.path.join(LINES_REFERENCE_DIR, "selected_lines.json")
