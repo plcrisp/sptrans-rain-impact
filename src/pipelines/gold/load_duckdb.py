@@ -293,7 +293,7 @@ def verify_gold_model(con: duckdb.DuckDBPyConnection) -> Dict[str, int]:
 
 
 def run_load() -> int:
-    """Load Silver datasets into DuckDB and build/verify the Gold Star Schema."""
+    """Load Silver datasets into DuckDB silver schema (Gold models are built by dbt)."""
     Config.ensure_dirs()
     db_path = Path(Config.GOLD_DB_PATH)
     enriched_parquet = Path(Config.ENRICHED_SILVER_PARQUET_PATH)
@@ -305,8 +305,8 @@ def run_load() -> int:
     try:
         create_schemas(con)
         load_silver_into_db(con, enriched_parquet, selected_lines_path, stations_path)
-        build_gold_star_schema(con)
-        counts = verify_gold_model(con)
+        # build_gold_star_schema(con)  # Replaced by declarative dbt models (Stage 4)
+        silver_rows = _scalar(con, "SELECT COUNT(*) FROM silver.sptrans_rain_enriched")
     finally:
         con.close()
 
@@ -319,10 +319,10 @@ def run_load() -> int:
             to_relative_path(stations_path),
         ],
         output=db_path.name,
-        records=counts["fact_rows"],
-        extra=counts,
+        records=silver_rows,
+        extra={"silver_enriched_rows": silver_rows},
     )
-    logger.info("Gold DuckDB load completed successfully.")
+    logger.info("Silver DuckDB load completed successfully (%s rows).", silver_rows)
     return 0
 
 

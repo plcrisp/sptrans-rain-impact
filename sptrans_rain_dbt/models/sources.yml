@@ -1,0 +1,9 @@
+version: 2
+
+sources:
+  - name: silver
+    schema: silver
+    tables:
+      - name: sptrans_rain_enriched
+      - name: selected_lines
+      - name: stations_catalog

@@ -45,8 +45,8 @@ data/
 │   ├── cemaden/              # rain_silver_export.{parquet,csv} (chuva em mm com marcação de falhas)
 │   └── sptrans_rain_enriched.parquet  # Cruzamento Silver (ônibus + chuva horária + métricas derivadas)
 │
-└── gold/                     # 📊 Camada Analítica final
-    └── ...                   # Cruzamento espaço-temporal (Velocidade vs. Precipitação)
+└── gold/                     # 📊 Camada Analítica final (DuckDB)
+    └── project.duckdb        # Banco embutido com schemas silver e gold (Esquema Estrela)
 ```
 
 > Cada subpasta de dados (`reference/gtfs`, `reference/stations`, `reference/lines`, `bronze/sptrans`, `bronze/cemaden`, `silver/sptrans`, `silver/cemaden`) também mantém seu próprio arquivo incremental `provenance.jsonl` (em inglês, ignorado no Git) registrando origem, saídas, contagem de registros e timestamp UTC de cada execução.
@@ -88,23 +88,82 @@ O pipeline divide-se em 4 etapas lógicas e intuitivas:
   - Gera atributos derivados pós-junção: `rain_intensity` (`dry`, `light`, `moderate`, `heavy`, `unknown`), `is_raining`, `dry_baseline_speed_kmh` e `speed_diff_from_dry_avg`.
   - **Motivos de leituras sem chuva pareada (`rain_intensity = "unknown"`):** ocorrem quando a janela temporal da SPTrans ainda não foi ingerida no CEMADEN ou quando a estação apresentou falha de comunicação naquela hora (`is_missing = True`).
 
+### 4. Camada Ouro / Gold (`data/gold/project.duckdb`) — _Esquema Estrela_
+
+Modelagem dimensional carregada em **DuckDB** (`silver.*` → `gold.*`):
+- **`gold.fact_bus_readings`** *(grão: 1 leitura válida de veículo em um instante — `vehicle_id`, `route_code`, `observed_at`)*: métricas de velocidade (`speed_kmh`, `speed_diff_from_dry_avg`), distância até a estação (`distance_to_station_m`) e chuva (`precipitation_mm`, `rain_intensity`, `is_raining`).
+- **`gold.dim_lines`** *(1 linha por `route_code` / sentido)*: código, nome da linha (`route_name`), `direction_id` e sentido operacional.
+- **`gold.dim_stations`** *(1 linha por `station_id`)*: nome da estação CEMADEN, cidade, UF, coordenadas e status.
+- **`gold.dim_time`** *(1 linha por `hour_key`)*: data, hora, dia da semana, `is_weekend` e `is_peak`.
+- **`gold.vw_bus_rain_impact`**: view analítica juntando fato e dimensões como fonte única de verdade para consumo.
+
 ---
 
 ## 🚀 Como Executar
 
-### Execução pelo Orquestrador Único (`src/pipeline.py`)
+### Execução pelo Orquestrador Único (`sptrans_rain_dbt/          # Modelos SQL declarativos (dbt-duckdb) da camada Gold
+├── models/
+│   ├── sources.yml        # Declaração das tabelas Silver no DuckDB
+│   ├── dim_lines.sql      # Dimensão de linhas
+│   ├── dim_stations.sql   # Dimensão de estações pluviométricas
+│   ├── dim_time.sql       # Dimensão temporal (hora/pico/fim de semana)
+│   ├── fact_bus_readings.sql
+│   └── vw_bus_rain_impact.sql
+└── profiles.yml           # Perfil local apontando para data/gold/project.duckdb
 
-Depois de coletar dados na Bronze da SPTrans (`src/pipelines/bronze/collect_sptrans.py`), todo o fluxo em lote (CEMADEN Bronze → Silver SPTrans → Silver CEMADEN → Enriquecimento Silver) roda por um único comando e grava logs no console e em `pipeline.log`:
+src/pipeline.py`)
+
+Depois de coletar dados na Bronze da SPTrans (`sptrans_rain_dbt/          # Modelos SQL declarativos (dbt-duckdb) da camada Gold
+├── models/
+│   ├── sources.yml        # Declaração das tabelas Silver no DuckDB
+│   ├── dim_lines.sql      # Dimensão de linhas
+│   ├── dim_stations.sql   # Dimensão de estações pluviométricas
+│   ├── dim_time.sql       # Dimensão temporal (hora/pico/fim de semana)
+│   ├── fact_bus_readings.sql
+│   └── vw_bus_rain_impact.sql
+└── profiles.yml           # Perfil local apontando para data/gold/project.duckdb
+
+src/pipelines/bronze/collect_sptrans.py`), todo o fluxo em lote (CEMADEN Bronze → Silver SPTrans → Silver CEMADEN → Enriquecimento Silver) roda por um único comando e grava logs no console e em `pipeline.log`:
 
 ```bash
 # Rodar todas as etapas prontas do início ao fim
-python src/pipeline.py
+python sptrans_rain_dbt/          # Modelos SQL declarativos (dbt-duckdb) da camada Gold
+├── models/
+│   ├── sources.yml        # Declaração das tabelas Silver no DuckDB
+│   ├── dim_lines.sql      # Dimensão de linhas
+│   ├── dim_stations.sql   # Dimensão de estações pluviométricas
+│   ├── dim_time.sql       # Dimensão temporal (hora/pico/fim de semana)
+│   ├── fact_bus_readings.sql
+│   └── vw_bus_rain_impact.sql
+└── profiles.yml           # Perfil local apontando para data/gold/project.duckdb
+
+src/pipeline.py
 
 # Retomar a partir de uma etapa específica (ex.: sem bater nas APIs)
-python src/pipeline.py silver_enrichment
+python sptrans_rain_dbt/          # Modelos SQL declarativos (dbt-duckdb) da camada Gold
+├── models/
+│   ├── sources.yml        # Declaração das tabelas Silver no DuckDB
+│   ├── dim_lines.sql      # Dimensão de linhas
+│   ├── dim_stations.sql   # Dimensão de estações pluviométricas
+│   ├── dim_time.sql       # Dimensão temporal (hora/pico/fim de semana)
+│   ├── fact_bus_readings.sql
+│   └── vw_bus_rain_impact.sql
+└── profiles.yml           # Perfil local apontando para data/gold/project.duckdb
+
+src/pipeline.py silver_enrichment
 
 # Listar etapas declaradas
-python src/pipeline.py --list
+python sptrans_rain_dbt/          # Modelos SQL declarativos (dbt-duckdb) da camada Gold
+├── models/
+│   ├── sources.yml        # Declaração das tabelas Silver no DuckDB
+│   ├── dim_lines.sql      # Dimensão de linhas
+│   ├── dim_stations.sql   # Dimensão de estações pluviométricas
+│   ├── dim_time.sql       # Dimensão temporal (hora/pico/fim de semana)
+│   ├── fact_bus_readings.sql
+│   └── vw_bus_rain_impact.sql
+└── profiles.yml           # Perfil local apontando para data/gold/project.duckdb
+
+src/pipeline.py --list
 ```
 
 ### 1. Pré-requisitos e Instalação
@@ -143,16 +202,37 @@ O projeto conta com notebooks interativos numerados na pasta `notebooks/`, cobri
 
 ---
 
-## 📁 Estrutura do Código (`src/`)
+## 📁 Estrutura do Código (`sptrans_rain_dbt/          # Modelos SQL declarativos (dbt-duckdb) da camada Gold
+├── models/
+│   ├── sources.yml        # Declaração das tabelas Silver no DuckDB
+│   ├── dim_lines.sql      # Dimensão de linhas
+│   ├── dim_stations.sql   # Dimensão de estações pluviométricas
+│   ├── dim_time.sql       # Dimensão temporal (hora/pico/fim de semana)
+│   ├── fact_bus_readings.sql
+│   └── vw_bus_rain_impact.sql
+└── profiles.yml           # Perfil local apontando para data/gold/project.duckdb
+
+src/`)
 
 ```text
+sptrans_rain_dbt/          # Modelos SQL declarativos (dbt-duckdb) da camada Gold
+├── models/
+│   ├── sources.yml        # Declaração das tabelas Silver no DuckDB
+│   ├── dim_lines.sql      # Dimensão de linhas
+│   ├── dim_stations.sql   # Dimensão de estações pluviométricas
+│   ├── dim_time.sql       # Dimensão temporal (hora/pico/fim de semana)
+│   ├── fact_bus_readings.sql
+│   └── vw_bus_rain_impact.sql
+└── profiles.yml           # Perfil local apontando para data/gold/project.duckdb
+
 src/
 ├── pipeline.py           # Orquestrador único do pipeline em lote (com retomada por etapa)
 ├── clients/              # Clientes HTTP com retry e autenticação (SPTrans e CEMADEN)
 ├── core/                 # Configurações centralizadas e leitura do .env (config.py)
 ├── pipelines/            # Scripts de execução das camadas
 │   ├── bronze/           # Ingestão de dados brutos (select_lines, collect_sptrans, ingest_cemaden)
-│   └── silver/           # Transformação, limpeza e enriquecimento (build_sptrans_silver, build_cemaden_silver, enrich_sptrans_rain)
+│   ├── silver/           # Transformação, limpeza e enriquecimento (build_sptrans_silver, build_cemaden_silver, enrich_sptrans_rain)
+│   └── gold/             # Carga no DuckDB (load_duckdb) e execução declarativa dbt (run_dbt)
 └── utils/                # Módulos especializados de apoio
     ├── cemaden_bronze.py # Manipulação de arquivos brutos e requisições da chuva
     ├── cemaden_silver.py # Limpeza, arredondamento e detecção de falhas da chuva

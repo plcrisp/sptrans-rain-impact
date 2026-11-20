@@ -1,0 +1,8 @@
+sptrans_rain_dbt:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('GOLD_DB_PATH', '../data/gold/project.duckdb') }}"
+      schema: gold
+      threads: 1
