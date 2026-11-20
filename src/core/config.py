@@ -24,6 +24,8 @@ class Config:
     # Camadas medalhão
     BRONZE_DIR = RAW_DATA_DIR
     SILVER_DIR = os.path.join(DATA_DIR, "silver")
+    GOLD_DIR = os.path.join(DATA_DIR, "gold")
+    GOLD_DB_PATH = os.path.join(GOLD_DIR, "project.duckdb")
 
     # Subpastas específicas por fonte
     SPTRANS_BRONZE_DIR = os.path.join(BRONZE_DIR, "sptrans")
@@ -121,6 +123,7 @@ class Config:
             cls.SILVER_DIR,
             cls.SPTRANS_SILVER_DIR,
             cls.CEMADEN_SILVER_DIR,
+            cls.GOLD_DIR,
         ]
         for directory in dirs:
             os.makedirs(directory, exist_ok=True)
