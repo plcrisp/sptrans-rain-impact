@@ -230,6 +230,15 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     q_idx = 0
     total_to_schedule = len(queue)
+    initial_resumed = len(pending_jobs)
+    total_work = total_to_schedule + initial_resumed
+
+    logger.info(
+        "CEMADEN queue initialized: %s to schedule, %s resumed pending (total=%s).",
+        total_to_schedule,
+        initial_resumed,
+        total_work,
+    )
 
     try:
         while (q_idx < total_to_schedule or pending_jobs) and not _interrupted:
@@ -365,6 +374,25 @@ def main(argv: Optional[List[str]] = None) -> int:
 
             for fid in finished:
                 pending_jobs.pop(fid, None)
+
+            completed_work = (
+                len(downloaded_files)
+                + no_data_count
+                + error_count
+                + timeout_count
+                + rejected_or_expired_count
+            )
+            failed_work = error_count + timeout_count + rejected_or_expired_count
+            logger.info(
+                "CEMADEN progress: %s/%s done (%s ok, %s no_data, %s failed) | active=%s | queued=%s",
+                completed_work,
+                total_work,
+                len(downloaded_files),
+                no_data_count,
+                failed_work,
+                len(pending_jobs),
+                total_to_schedule - q_idx,
+            )
     finally:
         status = (
             "interrupted"
