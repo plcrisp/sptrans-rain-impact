@@ -41,6 +41,13 @@ def stage_silver_enrichment() -> int:
     return enrich_sptrans_rain.run_enrichment()
 
 
+def stage_gold_load() -> int:
+    """Load Silver datasets into DuckDB and build/verify Gold Star Schema."""
+    from src.pipelines.gold import load_duckdb
+
+    return load_duckdb.run_load()
+
+
 StageFn = Optional[Callable[[], Optional[int]]]
 
 STAGES: List[Tuple[str, StageFn]] = [
@@ -48,7 +55,7 @@ STAGES: List[Tuple[str, StageFn]] = [
     ("sptrans_silver", stage_sptrans_silver),
     ("cemaden_silver", stage_cemaden_silver),
     ("silver_enrichment", stage_silver_enrichment),
-    ("gold_load", None),  # Pending: Stage 3 (DuckDB load)
+    ("gold_load", stage_gold_load),
     ("gold_dbt", None),   # Pending: Stage 4/5 (dbt models & tests)
 ]
 
