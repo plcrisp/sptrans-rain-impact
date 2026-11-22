@@ -274,8 +274,8 @@ def verify_gold_model(con: duckdb.DuckDBPyConnection) -> Dict[str, int]:
         "orphan_time_rows": orphan_time,
     }
     logger.info(
-        "Gold integrity check | fact=%s | dim_lines=%s | dim_stations=%s | dim_time=%s | "
-        "view=%s | dup_grain=%s | orphan_lines=%s | orphan_stations=%s | orphan_time=%s",
+        "Integridade Gold | fato=%s | dim_linhas=%s | dim_estacoes=%s | dim_tempo=%s | "
+        "view=%s | dup_grao=%s | orfaos_linhas=%s | orfaos_estacoes=%s | orfaos_tempo=%s",
         counts["fact_rows"],
         counts["dim_lines_rows"],
         counts["dim_stations_rows"],
@@ -304,7 +304,7 @@ def run_load() -> int:
     selected_lines_path = Path(Config.SELECTED_LINES_PATH)
     stations_path = Path(Config.STATIONS_DATA_DIR) / "cemaden_sp_stations.json"
 
-    logger.info("Loading Silver data into DuckDB at %s...", db_path)
+    logger.info("Carregando dados Silver no DuckDB (%s)...", to_relative_path(db_path))
     con = connect_db(db_path)
     try:
         create_schemas(con)
@@ -326,7 +326,7 @@ def run_load() -> int:
         records=silver_rows,
         extra={"silver_enriched_rows": silver_rows},
     )
-    logger.info("Silver DuckDB load completed successfully (%s rows).", silver_rows)
+    logger.info("Carga Silver no DuckDB concluída (%s linhas).", silver_rows)
     return 0
 
 

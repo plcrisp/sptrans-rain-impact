@@ -234,11 +234,14 @@ def main(argv: Optional[List[str]] = None) -> int:
     total_work = total_to_schedule + initial_resumed
 
     logger.info(
-        "CEMADEN queue initialized: %s to schedule, %s resumed pending (total=%s).",
+        "Fila CEMADEN inicializada: %s para agendar, %s pendentes retomados (total=%s).",
         total_to_schedule,
         initial_resumed,
         total_work,
     )
+
+    last_progress_state = None
+    last_progress_log_ts = 0.0
 
     try:
         while (q_idx < total_to_schedule or pending_jobs) and not _interrupted:
@@ -383,16 +386,21 @@ def main(argv: Optional[List[str]] = None) -> int:
                 + rejected_or_expired_count
             )
             failed_work = error_count + timeout_count + rejected_or_expired_count
-            logger.info(
-                "CEMADEN progress: %s/%s done (%s ok, %s no_data, %s failed) | active=%s | queued=%s",
-                completed_work,
-                total_work,
-                len(downloaded_files),
-                no_data_count,
-                failed_work,
-                len(pending_jobs),
-                total_to_schedule - q_idx,
-            )
+            progress_state = (completed_work, len(pending_jobs), total_to_schedule - q_idx)
+            now_log_ts = time.monotonic()
+            if progress_state != last_progress_state or (now_log_ts - last_progress_log_ts) >= 120.0:
+                logger.info(
+                    "Progresso CEMADEN: %s/%s concluídos (%s ok, %s sem_dados, %s falhas) | ativos=%s | na_fila=%s",
+                    completed_work,
+                    total_work,
+                    len(downloaded_files),
+                    no_data_count,
+                    failed_work,
+                    len(pending_jobs),
+                    total_to_schedule - q_idx,
+                )
+                last_progress_state = progress_state
+                last_progress_log_ts = now_log_ts
     finally:
         status = (
             "interrupted"

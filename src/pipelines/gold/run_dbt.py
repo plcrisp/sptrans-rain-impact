@@ -27,6 +27,35 @@ def _resolve_dbt_command() -> List[str]:
     return ["dbt"]
 
 
+def _extract_dbt_summary(stdout: str) -> str:
+    """Return the final 'Done.' summary line from dbt CLI output, if present."""
+    for line in reversed(stdout.splitlines()):
+        stripped = line.strip()
+        if "Done." in stripped:
+            return stripped
+    return "concluído"
+
+
+def _run_dbt_step(cmd: List[str], label: str, cwd: Path, env: dict) -> None:
+    """Run a dbt CLI command, logging only its summary unless it fails."""
+    proc = subprocess.run(
+        cmd,
+        cwd=str(cwd),
+        env=env,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if proc.returncode != 0:
+        if proc.stdout:
+            logger.error("Saída do %s:\n%s", label, proc.stdout.strip())
+        if proc.stderr:
+            logger.error("Erro do %s:\n%s", label, proc.stderr.strip())
+        raise subprocess.CalledProcessError(proc.returncode, cmd, proc.stdout, proc.stderr)
+    logger.info("%s concluído: %s", label, _extract_dbt_summary(proc.stdout or ""))
+
+
 def run_dbt(select: Optional[str] = None) -> int:
     """Run dbt models against project.duckdb and verify Gold model integrity."""
     Config.ensure_dirs()
@@ -59,11 +88,11 @@ def run_dbt(select: Optional[str] = None) -> int:
     env = os.environ.copy()
     env["GOLD_DB_PATH"] = db_path.as_posix()
 
-    logger.info("Running dbt models in %s (target db=%s)...", dbt_dir, db_path)
-    subprocess.run(cmd_run, cwd=str(dbt_dir), env=env, check=True)
+    logger.info("Executando modelos dbt em %s (banco=%s)...", to_relative_path(dbt_dir), to_relative_path(db_path))
+    _run_dbt_step(cmd_run, "dbt run", dbt_dir, env)
 
-    logger.info("Running dbt data tests in %s...", dbt_dir)
-    subprocess.run(cmd_test, cwd=str(dbt_dir), env=env, check=True)
+    logger.info("Executando testes de dados dbt em %s...", to_relative_path(dbt_dir))
+    _run_dbt_step(cmd_test, "dbt test", dbt_dir, env)
 
     con = connect_db(db_path)
     try:
@@ -79,7 +108,7 @@ def run_dbt(select: Optional[str] = None) -> int:
         records=counts["fact_rows"],
         extra=counts,
     )
-    logger.info("dbt Gold build and verification completed successfully.")
+    logger.info("Construção e validação da camada Ouro via dbt concluídas com sucesso.")
     return 0
 
 

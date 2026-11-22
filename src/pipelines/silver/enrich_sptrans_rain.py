@@ -25,7 +25,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
 def run_enrichment() -> int:
     """Join SPTrans Silver and CEMADEN Silver into sptrans_rain_enriched.parquet."""
     Config.ensure_dirs()
-    logger.info("Starting Silver enrichment (SPTrans x CEMADEN)...")
+    logger.info("Iniciando enriquecimento Silver (SPTrans x CEMADEN)...")
 
     sptrans_df, sptrans_src = load_silver_table(
         Path(Config.SPTRANS_SILVER_PARQUET_PATH),
@@ -42,7 +42,7 @@ def run_enrichment() -> int:
     dest_path.parent.mkdir(parents=True, exist_ok=True)
     enriched_df.to_parquet(dest_path, engine="pyarrow", compression="snappy", index=False)
 
-    logger.info(f"Enriched Silver dataset saved at: {dest_path} ({len(enriched_df)} rows).")
+    logger.info("Dataset Silver enriquecido salvo em: %s (%s linhas).", to_relative_path(dest_path), len(enriched_df))
 
     record_provenance(
         target_dir=dest_path.parent,

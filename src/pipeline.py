@@ -69,16 +69,16 @@ STAGES: List[Tuple[str, StageFn]] = [
 
 def _execute_stage(name: str, fn: Callable[[], Optional[int]]) -> None:
     """Run one pipeline stage with timing and explicit failure logging."""
-    logger.info("Stage %s: started", name)
+    logger.info("Etapa %s: iniciada", name)
     t0 = time.monotonic()
     try:
         result = fn()
         if isinstance(result, int) and result != 0:
             raise RuntimeError(f"Stage '{name}' exited with non-zero code: {result}")
     except Exception:
-        logger.exception("Stage %s: failed", name)
+        logger.exception("Etapa %s: falhou", name)
         raise
-    logger.info("Stage %s: finished in %.2fs", name, time.monotonic() - t0)
+    logger.info("Etapa %s: concluída em %.2fs", name, time.monotonic() - t0)
 
 
 def run_pipeline(
@@ -97,8 +97,8 @@ def run_pipeline(
     started = start_from is None
     t_total = time.monotonic()
     logger.info(
-        "Pipeline started (start_from=%s)",
-        start_from if start_from is not None else "beginning",
+        "Pipeline iniciado (início=%s)",
+        start_from if start_from is not None else "do começo",
     )
 
     for name, fn in stage_list:
@@ -106,13 +106,13 @@ def run_pipeline(
             started = True
 
         if not started or fn is None:
-            reason = "pending implementation" if fn is None else f"before '{start_from}'"
-            logger.info("Stage %s: skipped (%s)", name, reason)
+            reason = "pendente de implementação" if fn is None else f"anterior a '{start_from}'"
+            logger.info("Etapa %s: pulada (%s)", name, reason)
             continue
 
         _execute_stage(name, fn)
 
-    logger.info("Pipeline completed in %.2fs", time.monotonic() - t_total)
+    logger.info("Pipeline concluído em %.2fs", time.monotonic() - t_total)
     return 0
 
 

@@ -105,8 +105,8 @@ def enrich_sptrans_with_rain(
     right_keys = set(zip(right_df["station_id"], right_df["hour_sp"]))
 
     logger.info(
-        f"Pre-join key check | only_sptrans={len(left_keys - right_keys)} | "
-        f"only_cemaden={len(right_keys - left_keys)} | matched_keys={len(left_keys & right_keys)}"
+        f"Chaves pré-join | apenas_sptrans={len(left_keys - right_keys)} | "
+        f"apenas_cemaden={len(right_keys - left_keys)} | casadas={len(left_keys & right_keys)}"
     )
 
     rows_before = len(left_df)
@@ -185,8 +185,8 @@ def enrich_sptrans_with_rain(
         "rain_intensity_counts": rain_intensity_counts,
     }
     logger.info(
-        f"Enrichment validation | left={rows_before} | result={rows_after} | "
-        f"with_rain={matched_with_rain_rows} | unmatched_key={unmatched_key_rows} | "
-        f"missing_sensor={missing_rain_rows}"
+        f"Validação do enriquecimento | entrada={rows_before} | saida={rows_after} | "
+        f"com_chuva={matched_with_rain_rows} | sem_chave={unmatched_key_rows} | "
+        f"sensor_ausente={missing_rain_rows}"
     )
     return merged, stats
