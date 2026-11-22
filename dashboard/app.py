@@ -96,16 +96,37 @@ with st.sidebar:
             "off_peak": "Somente fora do pico",
         }[x],
     )
+    day_labels = {
+        1: "Segunda",
+        2: "Terça",
+        3: "Quarta",
+        4: "Quinta",
+        5: "Sexta",
+        6: "Sábado",
+        7: "Domingo",
+    }
+    selected_days = st.multiselect(
+        "Dias da semana",
+        options=options["days_of_week"],
+        default=options["days_of_week"],
+        format_func=lambda d: day_labels.get(d, str(d)),
+        help="Mostra apenas os dias da semana presentes na base Gold.",
+    )
     st.divider()
     st.caption(
         "Os filtros viram parâmetro na consulta SQL (read_only=True), "
         "nunca texto concatenado."
     )
 
+if options["days_of_week"] and not selected_days:
+    st.warning("Selecione pelo menos um dia da semana.")
+    st.stop()
+
 # ------------------------------------------------------------- cartoes
 kpis = queries.get_overview_metrics(
     route_ids=selected_routes,
     peak_mode=peak_choice,
+    days_of_week=selected_days,
     include_unknown=False,
 )
 
@@ -147,6 +168,7 @@ st.subheader("Impacto por Intensidade da Chuva")
 intensity_df = queries.get_speed_by_rain_intensity(
     route_ids=selected_routes,
     peak_mode=peak_choice,
+    days_of_week=selected_days,
     include_unknown=False,
     min_readings=min_readings,
 )
@@ -205,6 +227,7 @@ st.subheader("Comparação por Linha (maior perda → menor)")
 route_df = queries.get_speed_by_route(
     route_ids=selected_routes,
     peak_mode=peak_choice,
+    days_of_week=selected_days,
     include_unknown=False,
     min_readings=min_readings,
 )
@@ -246,6 +269,7 @@ with st.expander("Auditar cobertura e leituras individuais"):
     sample_df = queries.get_readings_sample(
         route_ids=selected_routes,
         peak_mode=peak_choice,
+        days_of_week=selected_days,
         include_unknown=True,
         only_ok_speed=not include_non_ok,
         limit=100,

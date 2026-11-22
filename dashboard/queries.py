@@ -29,6 +29,7 @@ def _query(sql: str, params: Optional[List[Any]] = None) -> pd.DataFrame:
 def _build_where_clause(
     route_ids: Optional[List[str]] = None,
     peak_mode: str = "all",
+    days_of_week: Optional[List[int]] = None,
     rain_intensities: Optional[List[str]] = None,
     require_ok_speed: bool = False,
     include_unknown: bool = False,
@@ -48,6 +49,11 @@ def _build_where_clause(
         clauses.append("is_peak = true")
     elif peak_mode == "off_peak":
         clauses.append("is_peak = false")
+
+    if days_of_week:
+        placeholders = ", ".join(["?"] * len(days_of_week))
+        clauses.append(f"day_of_week in ({placeholders})")
+        params.extend(int(d) for d in days_of_week)
 
     if not include_unknown:
         clauses.append("rain_intensity <> 'unknown'")
@@ -96,6 +102,14 @@ def get_filter_options(min_readings_for_default: int = 30) -> Dict[str, Any]:
         end
         """
     )
+    days_df = _query(
+        """
+        select distinct day_of_week
+        from gold.vw_bus_rain_impact
+        where day_of_week is not null
+        order by day_of_week
+        """
+    )
     all_routes = routes_df["route_id"].tolist() if not routes_df.empty else []
     comparable_routes = comparable_df["route_id"].tolist() if not comparable_df.empty else []
     return {
@@ -107,12 +121,16 @@ def get_filter_options(min_readings_for_default: int = 30) -> Dict[str, Any]:
         "rain_intensities": intensities_df["rain_intensity"].tolist()
         if not intensities_df.empty
         else [],
+        "days_of_week": [int(d) for d in days_df["day_of_week"].tolist()]
+        if not days_df.empty
+        else [],
     }
 
 
 def get_overview_metrics(
     route_ids: Optional[List[str]] = None,
     peak_mode: str = "all",
+    days_of_week: Optional[List[int]] = None,
     rain_intensities: Optional[List[str]] = None,
     include_unknown: bool = False,
 ) -> Dict[str, Any]:
@@ -120,6 +138,7 @@ def get_overview_metrics(
     where_sql, params = _build_where_clause(
         route_ids=route_ids,
         peak_mode=peak_mode,
+        days_of_week=days_of_week,
         rain_intensities=rain_intensities,
         require_ok_speed=True,
         include_unknown=include_unknown,
@@ -143,6 +162,7 @@ def get_overview_metrics(
     unknown_where, unknown_params = _build_where_clause(
         route_ids=route_ids,
         peak_mode=peak_mode,
+        days_of_week=days_of_week,
         rain_intensities=None,
         require_ok_speed=True,
         include_unknown=True,
@@ -195,6 +215,7 @@ def get_overview_metrics(
 def get_speed_by_rain_intensity(
     route_ids: Optional[List[str]] = None,
     peak_mode: str = "all",
+    days_of_week: Optional[List[int]] = None,
     rain_intensities: Optional[List[str]] = None,
     include_unknown: bool = False,
     min_readings: int = 1,
@@ -203,6 +224,7 @@ def get_speed_by_rain_intensity(
     where_sql, params = _build_where_clause(
         route_ids=route_ids,
         peak_mode=peak_mode,
+        days_of_week=days_of_week,
         rain_intensities=rain_intensities,
         require_ok_speed=True,
         include_unknown=include_unknown,
@@ -235,6 +257,7 @@ def get_speed_by_rain_intensity(
 def get_speed_by_route(
     route_ids: Optional[List[str]] = None,
     peak_mode: str = "all",
+    days_of_week: Optional[List[int]] = None,
     rain_intensities: Optional[List[str]] = None,
     include_unknown: bool = False,
     min_readings: int = 1,
@@ -243,6 +266,7 @@ def get_speed_by_route(
     where_sql, params = _build_where_clause(
         route_ids=route_ids,
         peak_mode=peak_mode,
+        days_of_week=days_of_week,
         rain_intensities=rain_intensities,
         require_ok_speed=True,
         include_unknown=include_unknown,
@@ -273,6 +297,7 @@ def get_speed_by_route(
 def get_readings_sample(
     route_ids: Optional[List[str]] = None,
     peak_mode: str = "all",
+    days_of_week: Optional[List[int]] = None,
     rain_intensities: Optional[List[str]] = None,
     include_unknown: bool = False,
     only_ok_speed: bool = True,
@@ -282,6 +307,7 @@ def get_readings_sample(
     where_sql, params = _build_where_clause(
         route_ids=route_ids,
         peak_mode=peak_mode,
+        days_of_week=days_of_week,
         rain_intensities=rain_intensities,
         require_ok_speed=only_ok_speed,
         include_unknown=include_unknown,
