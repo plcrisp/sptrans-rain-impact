@@ -3,6 +3,7 @@ Como executar, a partir da raiz do projeto:
     streamlit run dashboard/app.py
 """
 
+import altair as alt
 import streamlit as st
 
 import queries
@@ -65,7 +66,7 @@ with st.expander("Como ler este painel"):
         "- **Classificação da chuva (mm/h na estação mais próxima):** `Seco` (0 mm), "
         "`Chuva fraca` (até 2,5 mm/h), `Chuva moderada` (até 10 mm/h) e `Chuva forte` (> 10 mm/h).\n"
         "- **Impacto da Chuva (Delta):** diferença entre a velocidade na chuva e a média sem chuva "
-        "**da mesma linha, mesmo sentido, mesmo trecho (estação mais próxima) e mesma faixa de horário (pico/fora de pico)**."
+        "**da mesma linha, mesmo sentido, mesmo trecho (estação mais próxima), mesmo tipo de dia (útil/fim de semana) e mesma hora do dia**."
     )
 
 # ------------------------------------------------------------- filtros
@@ -129,14 +130,25 @@ kpis = queries.get_overview_metrics(
     days_of_week=selected_days,
     include_unknown=False,
 )
+route_df = queries.get_speed_by_route(
+    route_ids=selected_routes,
+    peak_mode=peak_choice,
+    days_of_week=selected_days,
+    include_unknown=False,
+    min_readings=min_readings,
+)
+comparable_routes = len(route_df)
+affected_routes = (
+    int((route_df["avg_diff_from_dry_kmh"] < 0).sum()) if comparable_routes > 0 else 0
+)
 
-c1, c2, c3, c4 = st.columns(4)
+c1, c2, c3, c4, c5 = st.columns(5)
 c1.metric(
     "Seco (mesmo trecho/horário)",
     f"{br(kpis['dry_avg_speed_kmh'], 2)} km/h" if kpis["dry_avg_speed_kmh"] is not None else "N/D",
     delta=f"base: {br(kpis['dry_readings'], 0)} leituras secas",
     delta_color="off",
-    help="Média sem chuva nos mesmos trechos, sentidos e horários em que choveu.",
+    help="Média sem chuva nos mesmos trechos, sentidos, tipo de dia e horários em que choveu.",
 )
 c2.metric(
     "Velocidade na Chuva",
@@ -155,6 +167,17 @@ c3.metric(
     delta_color="normal",
 )
 c4.metric(
+    "Linhas com Redução",
+    f"{affected_routes} de {comparable_routes}",
+    delta=(
+        f"{round((affected_routes / comparable_routes) * 100)}% das comparáveis"
+        if comparable_routes > 0
+        else None
+    ),
+    delta_color="off",
+    help="Linhas que atingiram o mínimo de leituras e tiveram impacto médio negativo na chuva.",
+)
+c5.metric(
     "Amostra Analisada",
     br(kpis["total_ok_readings"], 0),
     delta=f"{kpis['rain_routes_count']} linha(s) com chuva",
@@ -179,16 +202,25 @@ if not intensity_df.empty:
     with esq:
         rain_only_df = intensity_df[intensity_df["rain_intensity"] != "dry"].copy()
         if not rain_only_df.empty:
+            rain_order = [RAIN_LABELS["light"], RAIN_LABELS["moderate"], RAIN_LABELS["heavy"]]
             rain_only_df["Intensidade"] = rain_only_df["rain_intensity"].map(
                 lambda x: RAIN_LABELS.get(x, x)
             )
-            st.bar_chart(
-                rain_only_df,
-                x="Intensidade",
-                y="avg_diff_from_dry_kmh",
-                color="#1B3A5F",
-                height=300,
+            chart = (
+                alt.Chart(rain_only_df)
+                .mark_bar(color="#1B3A5F")
+                .encode(
+                    x=alt.X("Intensidade:N", sort=rain_order, title="Intensidade", axis=alt.Axis(labelAngle=0)),
+                    y=alt.Y("avg_diff_from_dry_kmh:Q", title="Delta vs. Seco (km/h)"),
+                    tooltip=[
+                        alt.Tooltip("Intensidade:N", title="Categoria"),
+                        alt.Tooltip("readings:Q", title="Leituras", format=",.0f"),
+                        alt.Tooltip("avg_diff_from_dry_kmh:Q", title="Delta (km/h)", format="+.2f"),
+                    ],
+                )
+                .properties(height=300)
             )
+            st.altair_chart(chart, use_container_width=True)
         else:
             st.info(
                 "Nenhuma faixa de chuva atingiu o mínimo de leituras para o gráfico de impacto."
@@ -224,13 +256,6 @@ st.divider()
 
 # ------------------------------------ bloco 2: tabela por linha largura total
 st.subheader("Comparação por Linha (maior perda → menor)")
-route_df = queries.get_speed_by_route(
-    route_ids=selected_routes,
-    peak_mode=peak_choice,
-    days_of_week=selected_days,
-    include_unknown=False,
-    min_readings=min_readings,
-)
 if not route_df.empty:
     st.dataframe(
         route_df,

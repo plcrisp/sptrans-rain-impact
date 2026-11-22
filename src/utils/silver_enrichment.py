@@ -138,11 +138,18 @@ def enrich_sptrans_with_rain(
         merged["rain_mm"] > 0.0,
     )
 
-    ok_dry = merged[(merged["speed_flag"] == "ok") & (merged["rain_intensity"] == "dry")]
+    ok_dry = merged[(merged["speed_flag"] == "ok") & (merged["rain_intensity"] == "dry")].copy()
     if not ok_dry.empty:
+        merged["_is_weekend"] = merged["hour_sp"].dt.weekday >= 5
+        merged["_hour_sp"] = merged["hour_sp"].dt.hour
+        ok_dry["_is_weekend"] = ok_dry["hour_sp"].dt.weekday >= 5
+        ok_dry["_hour_sp"] = ok_dry["hour_sp"].dt.hour
+
         baseline_levels = [
-            (["route_id", "direction_id", "station_id", "is_peak"], "_base_station_peak"),
+            (["route_id", "direction_id", "station_id", "_is_weekend", "_hour_sp"], "_base_station_hour"),
+            (["route_id", "direction_id", "station_id", "_is_weekend", "is_peak"], "_base_station_wk_peak"),
             (["route_id", "direction_id", "station_id"], "_base_station"),
+            (["route_id", "direction_id", "_is_weekend", "_hour_sp"], "_base_route_hour"),
             (["route_id", "direction_id", "is_peak"], "_base_route_peak"),
             (["route_id", "direction_id"], "_base_route"),
         ]
@@ -157,6 +164,7 @@ def enrich_sptrans_with_rain(
             baseline_series = baseline_series.fillna(merged[col_name])
             merged = merged.drop(columns=[col_name])
 
+        merged = merged.drop(columns=["_is_weekend", "_hour_sp"])
         merged["dry_baseline_speed_kmh"] = baseline_series.round(2)
     else:
         merged["dry_baseline_speed_kmh"] = np.nan
