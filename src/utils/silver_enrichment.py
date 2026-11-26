@@ -145,13 +145,10 @@ def enrich_sptrans_with_rain(
         ok_dry["_is_weekend"] = ok_dry["hour_sp"].dt.weekday >= 5
         ok_dry["_hour_sp"] = ok_dry["hour_sp"].dt.hour
 
+        # Pareamento estrito: mesma linha, sentido, estação (trecho), tipo de dia e hora exata
+        # (sem fallback entre trechos ou horários diferentes; fica NaN se não houver amostra seca exata)
         baseline_levels = [
             (["route_id", "direction_id", "station_id", "_is_weekend", "_hour_sp"], "_base_station_hour"),
-            (["route_id", "direction_id", "station_id", "_is_weekend", "is_peak"], "_base_station_wk_peak"),
-            (["route_id", "direction_id", "station_id"], "_base_station"),
-            (["route_id", "direction_id", "_is_weekend", "_hour_sp"], "_base_route_hour"),
-            (["route_id", "direction_id", "is_peak"], "_base_route_peak"),
-            (["route_id", "direction_id"], "_base_route"),
         ]
         baseline_series = pd.Series(np.nan, index=merged.index, dtype="float64")
         for group_cols, col_name in baseline_levels:

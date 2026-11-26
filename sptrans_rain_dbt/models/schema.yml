@@ -149,7 +149,7 @@ models:
               arguments:
                 values: ["dry", "light", "moderate", "heavy", "unknown"]
       - name: dry_baseline_speed_kmh
-        description: "Hierarchical mean dry-weather speed (km/h) starting at the same route, direction, nearest station, weekend flag, and hour of day, falling back progressively to broader route/direction groups when no exact dry sample exists."
+        description: "Exact-match mean dry-weather speed (km/h) for the same route, direction, nearest station, weekend flag, and hour of day (null when no dry sample exists for that exact segment and hour)."
       - name: speed_diff_from_dry_avg
         description: "Difference between observed speed_kmh and dry_baseline_speed_kmh (negative values indicate slower speeds than the dry baseline)."
 
