@@ -241,7 +241,9 @@ with tab_linhas:
                     alt.Tooltip("rain_avg_speed_kmh:Q", title="Chuva (km/h)", format=".2f"),
                     alt.Tooltip("avg_diff_from_dry_kmh:Q", title="Impacto (km/h)", format="+.2f"),
                     alt.Tooltip("avg_diff_pct:Q", title="Impacto (%)", format="+.1f"),
-                    alt.Tooltip("rain_readings:Q", title="Leituras chuva", format=",.0f"),
+                    alt.Tooltip("dry_readings:Q", title="Leituras (Seco)", format=",.0f"),
+                    alt.Tooltip("rain_readings:Q", title="Leituras (Chuva)", format=",.0f"),
+                    alt.Tooltip("readings:Q", title="Total Válidas", format=",.0f"),
                 ],
             )
         )
@@ -249,33 +251,8 @@ with tab_linhas:
             color="#666666", strokeDash=[4, 4]
         ).encode(x="x:Q")
         st.altair_chart(
-            (route_bars + zero_x).properties(height=max(220, len(route_df) * 34)),
+            (route_bars + zero_x).properties(height=max(280, len(route_df) * 42)),
             use_container_width=True,
-        )
-
-        st.dataframe(
-            route_df,
-            hide_index=True,
-            use_container_width=True,
-            column_config={
-                "route_id": st.column_config.TextColumn("Linha"),
-                "route_name": st.column_config.TextColumn("Nome da Linha"),
-                "readings": st.column_config.NumberColumn("Total Válidas", format="%d"),
-                "dry_readings": st.column_config.NumberColumn("Leituras (Seco)", format="%d"),
-                "rain_readings": st.column_config.NumberColumn("Leituras (Chuva)", format="%d"),
-                "dry_avg_speed_kmh": st.column_config.NumberColumn(
-                    "Seco Mesmo Trecho (km/h)", format="%.2f"
-                ),
-                "rain_avg_speed_kmh": st.column_config.NumberColumn(
-                    "Média Chuva (km/h)", format="%.2f"
-                ),
-                "avg_diff_from_dry_kmh": st.column_config.NumberColumn(
-                    "Impacto (km/h)", format="%.2f"
-                ),
-                "avg_diff_pct": st.column_config.NumberColumn(
-                    "Impacto (%)", format="%.1f%%"
-                ),
-            },
         )
     else:
         st.info(f"Nenhuma linha atingiu o mínimo de {MIN_READINGS} leituras no seco e na chuva.")
