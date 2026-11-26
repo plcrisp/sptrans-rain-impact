@@ -69,31 +69,31 @@ dbt docs serve --profiles-dir .
 
 ## Decisões de tratamento
 
-Números referentes à carga consolidada em `2026-11-22T15:46:49Z` (38.813 JSONs da SPTrans e 76 CSVs do CEMADEN):
+Números referentes à carga consolidada em `2026-11-26T03:37:16Z` (período `20/11/2026` a `25/11/2026` — 106.433 JSONs da SPTrans e 76 CSVs do CEMADEN):
 
-- **Deduplicação e filtros na SPTrans:** de `186.137` leituras brutas, `1.069` duplicadas na chave natural e `3` timestamps inválidos foram removidos, resultando em **`185.065`** registros na Silver (`0` coordenadas inválidas).
-- **Sinalização de velocidade (`speed_flag`):** em vez de excluir extremos silenciosamente, todas as leituras são mantidas e classificadas — `123.860` válidas (`ok`), `54.202` parados (`parked`), `5.475` intervalo inválido (`dt_out_of_range`), `1.076` acima de 80 km/h (`too_fast`) e `452` primeiras leituras (`first_reading`). Apenas `ok` entra nas médias.
-- **Falhas de pluviômetro no CEMADEN:** dos `27.005` registros na Silver (`19` estações), `4.923` são leituras reais e `22.082` são marcações explícitas de ausência (`is_missing = True`) para não confundir falta de sinal com `0 mm`.
+- **Deduplicação e filtros na SPTrans:** de `645.052` leituras brutas, `5.945` duplicadas na chave natural e `965` timestamps inválidos foram removidos, resultando em **`638.142`** registros na Silver (`0` coordenadas inválidas).
+- **Sinalização de velocidade (`speed_flag`):** em vez de excluir extremos silenciosamente, todas as leituras são mantidas e classificadas — `452.180` válidas (`ok`), `164.666` parados (`parked`), `16.680` intervalo inválido (`dt_out_of_range`), `4.037` acima de 80 km/h (`too_fast`) e `579` primeiras leituras (`first_reading`). Apenas `ok` entra nas médias.
+- **Falhas de pluviômetro no CEMADEN:** dos `7.725` registros na Silver (`19` estações), `7.162` são leituras reais e `563` são marcações explícitas de ausência (`is_missing = True`) para não confundir falta de sinal com `0 mm`.
 
 ---
 
 ## Junção
 
-- **Chave e tipo:** `merge(..., on=["station_id", "hour_sp"], how="left", validate="many_to_one")` entre SPTrans Silver (`185.065` linhas) e CEMADEN Silver agregado por hora (`24.871` chaves únicas).
-- **Validação:** `185.065` linhas antes → `185.065` linhas depois (`0` duplicações).
-- **Cobertura:** `927` chaves casadas e `0` leituras sem chave (`unmatched_key_rows = 0`). Das `185.065` leituras, `154.082` têm chuva válida (`dry`: `146.324`, `light`: `6.700`, `moderate`: `665`, `heavy`: `393`) e `30.983` coincidem com falha de sensor (`rain_is_missing = True` → `rain_intensity = 'unknown'`).
+- **Chave e tipo:** `merge(..., on=["station_id", "hour_sp"], how="left", validate="many_to_one")` entre SPTrans Silver (`638.142` linhas) e CEMADEN Silver agregado por hora (`3.173` chaves únicas).
+- **Validação:** `638.142` linhas antes → `638.142` linhas depois (`0` duplicações).
+- **Cobertura:** `2.264` chaves casadas e `0` leituras sem chave (`unmatched_key_rows = 0`). Das `638.142` leituras, `543.494` têm chuva válida (`dry`: `430.370`, `light`: `98.945`, `moderate`: `10.323`, `heavy`: `3.856`) e `94.648` coincidem com falha de sensor (`rain_is_missing = True` → `rain_intensity = 'unknown'`).
 
 ---
 
 ## Atributos derivados
 
-| Atributo                  | O que é                                                                                            | Papel na análise                                              | Quando não calcula                            |
-| :------------------------ | :------------------------------------------------------------------------------------------------- | :------------------------------------------------------------ | :-------------------------------------------- |
-| `speed_kmh`               | Velocidade (km/h) entre leituras sucessivas projetadas na rota GTFS.                               | Variável principal de desempenho.                             | Nulo se `speed_flag != 'ok'`.                 |
-| `rain_intensity`          | Faixa horária (`dry`, `light <= 2,5`, `moderate <= 10`, `heavy > 10` mm/h).                        | Testa perda de velocidade por intensidade.                    | `'unknown'` se `rain_mm` ausente.             |
-| `is_raining`              | Booleano (`rain_mm > 0`).                                                                          | Comparação direta Seco vs. Chuva.                             | Nulo se `rain_mm` ausente.                    |
-| `dry_baseline_speed_kmh`  | Média no seco para a mesma linha, sentido, estação, tipo de dia e hora (com fallback hierárquico). | Isola o efeito da chuva do trânsito típico do horário/trecho. | Nulo se não houver leitura seca `ok`.         |
-| `speed_diff_from_dry_avg` | `speed_kmh - dry_baseline_speed_kmh` (km/h).                                                       | Mede o impacto direto da chuva (negativo = mais lento).       | Nulo se `speed_flag != 'ok'` ou sem baseline. |
+| Atributo                  | O que é                                                                                                     | Papel na análise                                                         | Quando não calcula                                           |
+| :------------------------ | :---------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------- | :----------------------------------------------------------- |
+| `speed_kmh`               | Velocidade (km/h) entre leituras sucessivas projetadas na rota GTFS.                                        | Variável principal de desempenho.                                        | Nulo se `speed_flag != 'ok'`.                                |
+| `rain_intensity`          | Faixa horária (`dry`, `light <= 2,5`, `moderate <= 10`, `heavy > 10` mm/h).                                 | Classifica a intensidade da chuva na Gold.                               | `'unknown'` se `rain_mm` ausente.                            |
+| `is_raining`              | Booleano (`rain_mm > 0`).                                                                                   | Comparação direta Seco vs. Chuva.                                        | Nulo se `rain_mm` ausente.                                   |
+| `dry_baseline_speed_kmh`  | Média no seco para a mesma linha, sentido, estação, tipo de dia e hora exata (pareamento estrito).          | Isola o efeito da chuva do trânsito típico (evita Paradoxo de Simpson).  | Nulo se não houver leitura seca `ok` naquela hora e trecho.  |
+| `speed_diff_from_dry_avg` | `speed_kmh - dry_baseline_speed_kmh` (km/h).                                                                | Mede o impacto direto da chuva (negativo = mais lento).                  | Nulo se `speed_flag != 'ok'` ou sem baseline exato.          |
 
 ---
 
@@ -101,11 +101,11 @@ Números referentes à carga consolidada em `2026-11-22T15:46:49Z` (38.813 JSONs
 
 Construído em **DuckDB** (`data/gold/project.duckdb`) via **dbt Core** em esquema estrela:
 
-- **`gold.fact_bus_readings`** _(185.065 linhas — grão: `vehicle_id`, `route_code`, `observed_at`)_: velocidade, flag, distância até a estação, chuva e impacto vs. seco.
+- **`gold.fact_bus_readings`** _(638.142 linhas — grão: `vehicle_id`, `route_code`, `observed_at`)_: velocidade, flag, distância até a estação, chuva e impacto vs. seco.
 - **`gold.dim_lines`** _(16 linhas)_: linhas selecionadas e sentidos operacionais.
 - **`gold.dim_stations`** _(79 linhas)_: catálogo de estações CEMADEN em São Paulo.
-- **`gold.dim_time`** _(52 linhas)_: dimensão horária local (`date_sp`, `hour_of_day`, `day_of_week`, `is_weekend`, `is_peak`).
-- **`gold.vw_bus_rain_impact`** _(VIEW — 185.065 linhas)_: visão analítica única consumida pelo painel.
+- **`gold.dim_time`** _(128 linhas)_: dimensão horária local (`date_sp`, `hour_of_day`, `day_of_week`, `is_weekend`, `is_peak`).
+- **`gold.vw_bus_rain_impact`** _(VIEW — 638.142 linhas)_: visão analítica única consumida pelo painel.
 
 Qualidade validada automaticamente por **31 testes no `dbt test`** (`not_null`, `unique`, `relationships`, `accepted_values`, unicidade do grão composto e faixa `[0, 80]` km/h).
 
