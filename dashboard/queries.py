@@ -110,8 +110,20 @@ def get_filter_options(min_readings_for_default: int = 30) -> Dict[str, Any]:
         order by day_of_week
         """
     )
+    period_df = _query(
+        """
+        select
+            min(date_sp) as min_date,
+            max(date_sp) as max_date,
+            count(distinct date_sp) as days_count
+        from gold.vw_bus_rain_impact
+        """
+    )
     all_routes = routes_df["route_id"].tolist() if not routes_df.empty else []
     comparable_routes = comparable_df["route_id"].tolist() if not comparable_df.empty else []
+    min_date = period_df.iloc[0]["min_date"] if not period_df.empty else None
+    max_date = period_df.iloc[0]["max_date"] if not period_df.empty else None
+    days_count = int(period_df.iloc[0]["days_count"]) if not period_df.empty else 0
     return {
         "routes": all_routes,
         "default_routes": comparable_routes if comparable_routes else all_routes,
@@ -124,6 +136,9 @@ def get_filter_options(min_readings_for_default: int = 30) -> Dict[str, Any]:
         "days_of_week": [int(d) for d in days_df["day_of_week"].tolist()]
         if not days_df.empty
         else [],
+        "min_date": min_date,
+        "max_date": max_date,
+        "days_count": days_count,
     }
 
 
@@ -150,9 +165,9 @@ def get_overview_metrics(
             sum(case when rain_intensity = 'dry' then 1 else 0 end) as dry_readings,
             sum(case when is_raining = true then 1 else 0 end) as rain_readings,
             count(distinct case when is_raining = true then route_id end) as rain_routes_count,
-            round(avg(case when is_raining = true then dry_baseline_speed_kmh end), 2) as dry_avg_speed_kmh,
-            round(avg(case when is_raining = true then speed_kmh end), 2) as rain_avg_speed_kmh,
-            round(avg(case when is_raining = true then speed_diff_from_dry_avg end), 2) as rain_avg_speed_diff_kmh
+            round(avg(case when is_raining = true and dry_baseline_speed_kmh is not null then dry_baseline_speed_kmh end), 2) as dry_avg_speed_kmh,
+            round(avg(case when is_raining = true and dry_baseline_speed_kmh is not null then speed_kmh end), 2) as rain_avg_speed_kmh,
+            round(avg(case when is_raining = true and dry_baseline_speed_kmh is not null then speed_diff_from_dry_avg end), 2) as rain_avg_speed_diff_kmh
         from gold.vw_bus_rain_impact
         {where_sql}
         """,
@@ -212,48 +227,6 @@ def get_overview_metrics(
     }
 
 
-def get_speed_by_rain_intensity(
-    route_ids: Optional[List[str]] = None,
-    peak_mode: str = "all",
-    days_of_week: Optional[List[int]] = None,
-    rain_intensities: Optional[List[str]] = None,
-    include_unknown: bool = False,
-    min_readings: int = 1,
-) -> pd.DataFrame:
-    """Aggregate speed metrics by rainfall intensity bucket with minimum sample filter."""
-    where_sql, params = _build_where_clause(
-        route_ids=route_ids,
-        peak_mode=peak_mode,
-        days_of_week=days_of_week,
-        rain_intensities=rain_intensities,
-        require_ok_speed=True,
-        include_unknown=include_unknown,
-    )
-    params.append(int(min_readings))
-    return _query(
-        f"""
-        select
-            rain_intensity,
-            count(*) as readings,
-            round(avg(speed_kmh), 2) as avg_speed_kmh,
-            round(median(speed_kmh), 2) as median_speed_kmh,
-            round(avg(speed_diff_from_dry_avg), 2) as avg_diff_from_dry_kmh
-        from gold.vw_bus_rain_impact
-        {where_sql}
-        group by rain_intensity
-        having count(*) >= ?
-        order by case rain_intensity
-            when 'dry' then 1
-            when 'light' then 2
-            when 'moderate' then 3
-            when 'heavy' then 4
-            else 5
-        end
-        """,
-        params,
-    )
-
-
 def get_speed_by_route(
     route_ids: Optional[List[str]] = None,
     peak_mode: str = "all",
@@ -280,9 +253,16 @@ def get_speed_by_route(
             count(*) as readings,
             sum(case when rain_intensity = 'dry' then 1 else 0 end) as dry_readings,
             sum(case when is_raining = true then 1 else 0 end) as rain_readings,
-            round(avg(case when is_raining = true then dry_baseline_speed_kmh end), 2) as dry_avg_speed_kmh,
-            round(avg(case when is_raining = true then speed_kmh end), 2) as rain_avg_speed_kmh,
-            round(avg(case when is_raining = true then speed_diff_from_dry_avg end), 2) as avg_diff_from_dry_kmh
+            round(avg(case when is_raining = true and dry_baseline_speed_kmh is not null then dry_baseline_speed_kmh end), 2) as dry_avg_speed_kmh,
+            round(avg(case when is_raining = true and dry_baseline_speed_kmh is not null then speed_kmh end), 2) as rain_avg_speed_kmh,
+            round(avg(case when is_raining = true and dry_baseline_speed_kmh is not null then speed_diff_from_dry_avg end), 2) as avg_diff_from_dry_kmh,
+            round(
+                (
+                    avg(case when is_raining = true and dry_baseline_speed_kmh is not null then speed_diff_from_dry_avg end)
+                    / nullif(avg(case when is_raining = true and dry_baseline_speed_kmh is not null then dry_baseline_speed_kmh end), 0)
+                ) * 100.0,
+                1
+            ) as avg_diff_pct
         from gold.vw_bus_rain_impact
         {where_sql}
         group by route_id, route_name
@@ -294,44 +274,77 @@ def get_speed_by_route(
     )
 
 
-def get_readings_sample(
+def get_hourly_profile(
     route_ids: Optional[List[str]] = None,
     peak_mode: str = "all",
     days_of_week: Optional[List[int]] = None,
-    rain_intensities: Optional[List[str]] = None,
-    include_unknown: bool = False,
-    only_ok_speed: bool = True,
-    limit: int = 200,
+    min_readings: int = 10,
+    hour_start: int = 5,
+    hour_end: int = 23,
 ) -> pd.DataFrame:
-    """Return recent enriched readings from Gold view."""
+    """Return matched dry baseline vs. observed rainy bus speed by hour of day."""
     where_sql, params = _build_where_clause(
         route_ids=route_ids,
         peak_mode=peak_mode,
         days_of_week=days_of_week,
-        rain_intensities=rain_intensities,
-        require_ok_speed=only_ok_speed,
-        include_unknown=include_unknown,
+        require_ok_speed=True,
+        include_unknown=False,
     )
-    params.append(int(limit))
+    extra = "is_raining = true and dry_baseline_speed_kmh is not null and hour_of_day between ? and ?"
+    full_where = f"{where_sql} and {extra}" if where_sql else f"where {extra}"
+    params.extend([int(hour_start), int(hour_end), int(min_readings)])
+    return _query(
+        f"""
+        with matched as (
+            select
+                hour_of_day,
+                count(*) as readings,
+                round(avg(dry_baseline_speed_kmh), 2) as dry_speed_kmh,
+                round(avg(speed_kmh), 2) as rain_speed_kmh
+            from gold.vw_bus_rain_impact
+            {full_where}
+            group by hour_of_day
+            having count(*) >= ?
+        )
+        select hour_of_day, 'Seco (mesmo trecho)' as condition, readings, dry_speed_kmh as avg_speed_kmh
+        from matched
+        union all
+        select hour_of_day, 'Chuva' as condition, readings, rain_speed_kmh as avg_speed_kmh
+        from matched
+        order by hour_of_day, condition
+        """,
+        params,
+    )
+
+
+def get_daily_summary(
+    route_ids: Optional[List[str]] = None,
+    peak_mode: str = "all",
+    days_of_week: Optional[List[int]] = None,
+    min_rain_readings: int = 100,
+) -> pd.DataFrame:
+    """Return daily summary of valid readings, max rainfall, and average speed impact."""
+    where_sql, params = _build_where_clause(
+        route_ids=route_ids,
+        peak_mode=peak_mode,
+        days_of_week=days_of_week,
+        require_ok_speed=True,
+        include_unknown=False,
+    )
+    params.append(int(min_rain_readings))
     return _query(
         f"""
         select
-            observed_at,
-            route_id,
-            direction_id,
-            vehicle_id,
-            speed_kmh,
-            speed_flag,
-            station_id,
-            station_name,
-            precipitation_mm,
-            rain_intensity,
-            speed_diff_from_dry_avg,
-            is_peak
+            date_sp,
+            sum(case when rain_intensity = 'dry' then 1 else 0 end) as dry_readings,
+            sum(case when is_raining = true then 1 else 0 end) as rain_readings,
+            round(max(precipitation_mm), 2) as max_precipitation_mm,
+            round(avg(case when is_raining = true and dry_baseline_speed_kmh is not null then speed_diff_from_dry_avg end), 2) as avg_diff_from_dry_kmh
         from gold.vw_bus_rain_impact
         {where_sql}
-        order by observed_at desc
-        limit ?
+        group by date_sp
+        having sum(case when is_raining = true then 1 else 0 end) >= ?
+        order by date_sp
         """,
         params,
     )

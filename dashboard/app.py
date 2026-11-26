@@ -4,25 +4,14 @@ Como executar, a partir da raiz do projeto:
 """
 
 import altair as alt
+import pandas as pd
 import streamlit as st
 
 import queries
 
-RAIN_LABELS = {
-    "dry": "Seco (0 mm/h)",
-    "light": "Chuva fraca (<= 2,5 mm/h)",
-    "moderate": "Chuva moderada (<= 10 mm/h)",
-    "heavy": "Chuva forte (> 10 mm/h)",
-    "unknown": "Sem dado de chuva",
-}
-
-SPEED_FLAG_LABELS = {
-    "ok": "Válida",
-    "first_reading": "1ª leitura",
-    "dt_out_of_range": "Intervalo inválido",
-    "parked": "Parado",
-    "too_fast": "Acima de 80 km/h",
-}
+MIN_READINGS = 30
+COLOR_LOSS = "#C0392B"
+COLOR_GAIN = "#2E6B9E"
 
 st.set_page_config(
     page_title="Impacto da Chuva na Velocidade dos Ônibus (SPTrans)",
@@ -31,62 +20,48 @@ st.set_page_config(
 
 
 def br(valor, casas=1):
-    """Formata numero no padrao brasileiro, com virgula decimal."""
-    if valor is None:
+    """Formata número no padrão brasileiro, com vírgula decimal."""
+    if valor is None or pd.isna(valor):
         return "N/D"
     texto = f"{valor:,.{casas}f}"
     return texto.replace(",", "@").replace(".", ",").replace("@", ".")
 
 
 def br_signed(valor, casas=2):
-    """Formata numero com sinal explicito no padrao brasileiro."""
-    if valor is None:
+    """Formata número com sinal explícito no padrão brasileiro."""
+    if valor is None or pd.isna(valor):
         return "N/D"
     sinal = "+" if valor > 0 else ""
     return f"{sinal}{br(valor, casas)}"
 
 
+def fmt_date(d):
+    if d is None or pd.isna(d):
+        return "N/D"
+    return pd.to_datetime(d).strftime("%d/%m/%Y")
+
+
 # ------------------------------------------------------------ abertura
 st.title("Impacto da Chuva na Velocidade dos Ônibus (SPTrans)")
-st.caption(
-    "Camada Gold (`data/gold/project.duckdb`) cruzando telemetria GPS da SPTrans "
-    "com estações pluviométricas do CEMADEN."
-)
 
 db_path = queries.get_db_path()
 if not db_path.exists():
     st.error(
         f"Banco não encontrado em `{db_path}`.\n\n"
-        "Rode o pipeline antes:  `python src/pipeline.py`"
+        "Rode o pipeline antes: `python src/pipeline.py`"
     )
     st.stop()
-
-with st.expander("Como ler este painel"):
-    st.markdown(
-        "- **Classificação da chuva (mm/h na estação mais próxima):** `Seco` (0 mm), "
-        "`Chuva fraca` (até 2,5 mm/h), `Chuva moderada` (até 10 mm/h) e `Chuva forte` (> 10 mm/h).\n"
-        "- **Impacto da Chuva (Delta):** diferença entre a velocidade na chuva e a média sem chuva "
-        "**da mesma linha, mesmo sentido, mesmo trecho (estação mais próxima), mesmo tipo de dia (útil/fim de semana) e mesma hora do dia**."
-    )
 
 # ------------------------------------------------------------- filtros
 with st.sidebar:
     st.header("Filtros")
-    min_readings = st.slider(
-        "Mínimo de leituras (seco e chuva)",
-        min_value=1,
-        max_value=200,
-        value=30,
-        step=5,
-        help="Exige pelo menos N leituras válidas no seco e N na chuva para comparar linhas e categorias.",
-    )
-    options = queries.get_filter_options(min_readings_for_default=min_readings)
+    options = queries.get_filter_options(min_readings_for_default=MIN_READINGS)
 
     selected_routes = st.multiselect(
         "Linhas de ônibus",
         options=options["routes"],
         default=options["default_routes"],
-        help="Por padrão, apenas linhas com amostra mínima no seco e na chuva vêm marcadas.",
+        help="Selecione as linhas de ônibus para análise.",
     )
     peak_choice = st.radio(
         "Janela de horário",
@@ -97,45 +72,31 @@ with st.sidebar:
             "off_peak": "Somente fora do pico",
         }[x],
     )
-    day_labels = {
-        1: "Segunda",
-        2: "Terça",
-        3: "Quarta",
-        4: "Quinta",
-        5: "Sexta",
-        6: "Sábado",
-        7: "Domingo",
-    }
-    selected_days = st.multiselect(
-        "Dias da semana",
-        options=options["days_of_week"],
-        default=options["days_of_week"],
-        format_func=lambda d: day_labels.get(d, str(d)),
-        help="Mostra apenas os dias da semana presentes na base Gold.",
-    )
-    st.divider()
-    st.caption(
-        "Os filtros viram parâmetro na consulta SQL (read_only=True), "
-        "nunca texto concatenado."
-    )
 
-if options["days_of_week"] and not selected_days:
-    st.warning("Selecione pelo menos um dia da semana.")
-    st.stop()
+st.caption(
+    f"Período analisado: **{fmt_date(options['min_date'])} a {fmt_date(options['max_date'])}** "
+    f"({options['days_count']} dias) · Telemetria GPS SPTrans + Pluviômetros CEMADEN."
+)
+
+with st.expander("Como ler este painel"):
+    st.markdown(
+        "- **Condição meteorológica:** compara leituras **sem chuva (`0 mm/h`)** contra leituras **com chuva (`> 0 mm/h`)** na estação CEMADEN mais próxima.\n"
+        "- **Impacto da Chuva (Delta):** diferença entre a velocidade na chuva e a média sem chuva "
+        "**da mesma linha, mesmo sentido, mesmo trecho (estação), mesmo tipo de dia e mesma hora** — evitando distorções entre linhas mais rápidas e mais lentas.\n"
+        "- **Cores:** vermelho indica **perda de velocidade** (ônibus mais lento na chuva); azul indica ganho."
+    )
 
 # ------------------------------------------------------------- cartoes
 kpis = queries.get_overview_metrics(
     route_ids=selected_routes,
     peak_mode=peak_choice,
-    days_of_week=selected_days,
     include_unknown=False,
 )
 route_df = queries.get_speed_by_route(
     route_ids=selected_routes,
     peak_mode=peak_choice,
-    days_of_week=selected_days,
     include_unknown=False,
-    min_readings=min_readings,
+    min_readings=MIN_READINGS,
 )
 comparable_routes = len(route_df)
 affected_routes = (
@@ -175,7 +136,6 @@ c4.metric(
         else None
     ),
     delta_color="off",
-    help="Linhas que atingiram o mínimo de leituras e tiveram impacto médio negativo na chuva.",
 )
 c5.metric(
     "Amostra Analisada",
@@ -186,150 +146,165 @@ c5.metric(
 
 st.divider()
 
-# ------------------------------------ bloco 1: grafico ao lado da tabela
-st.subheader("Impacto por Intensidade da Chuva")
-intensity_df = queries.get_speed_by_rain_intensity(
-    route_ids=selected_routes,
-    peak_mode=peak_choice,
-    days_of_week=selected_days,
-    include_unknown=False,
-    min_readings=min_readings,
+# ---------------------------------------------------------------- abas
+tab_geral, tab_linhas, tab_dia = st.tabs(
+    ["Visão Geral", "Por Linha", "Por Dia"]
 )
 
-if not intensity_df.empty:
-    esq, dir_ = st.columns([3, 2])
-
-    with esq:
-        rain_only_df = intensity_df[intensity_df["rain_intensity"] != "dry"].copy()
-        if not rain_only_df.empty:
-            rain_order = [RAIN_LABELS["light"], RAIN_LABELS["moderate"], RAIN_LABELS["heavy"]]
-            rain_only_df["Intensidade"] = rain_only_df["rain_intensity"].map(
-                lambda x: RAIN_LABELS.get(x, x)
-            )
-            chart = (
-                alt.Chart(rain_only_df)
-                .mark_bar(color="#1B3A5F")
-                .encode(
-                    x=alt.X("Intensidade:N", sort=rain_order, title="Intensidade", axis=alt.Axis(labelAngle=0)),
-                    y=alt.Y("avg_diff_from_dry_kmh:Q", title="Delta vs. Seco (km/h)"),
-                    tooltip=[
-                        alt.Tooltip("Intensidade:N", title="Categoria"),
-                        alt.Tooltip("readings:Q", title="Leituras", format=",.0f"),
-                        alt.Tooltip("avg_diff_from_dry_kmh:Q", title="Delta (km/h)", format="+.2f"),
-                    ],
-                )
-                .properties(height=300)
-            )
-            st.altair_chart(chart, use_container_width=True)
-        else:
-            st.info(
-                "Nenhuma faixa de chuva atingiu o mínimo de leituras para o gráfico de impacto."
-            )
-
-    with dir_:
-        table_int = intensity_df.copy()
-        table_int["rain_intensity"] = table_int["rain_intensity"].map(
-            lambda x: RAIN_LABELS.get(x, x)
-        )
-        st.dataframe(
-            table_int,
-            hide_index=True,
-            use_container_width=True,
-            column_config={
-                "rain_intensity": st.column_config.TextColumn("Categoria"),
-                "readings": st.column_config.NumberColumn("Leituras", format="%d"),
-                "avg_speed_kmh": st.column_config.NumberColumn("Média (km/h)", format="%.2f"),
-                "median_speed_kmh": st.column_config.NumberColumn("Mediana (km/h)", format="%.2f"),
-                "avg_diff_from_dry_kmh": st.column_config.NumberColumn(
-                    "Delta vs. Seco (km/h)",
-                    format="%.2f",
-                    help="Diferença média em relação ao mesmo trecho/horário sem chuva.",
-                ),
-            },
-        )
-else:
-    st.info(
-        f"Nenhuma categoria atingiu o mínimo de {min_readings} leituras para os filtros atuais."
+# ====================================================== ABA 1: VISÃO GERAL
+with tab_geral:
+    hourly_title = (
+        "Perfil Horário (Pico): Velocidade Média no Seco vs. Chuva"
+        if peak_choice == "peak"
+        else "Perfil Horário (05h–23h): Velocidade Média no Seco vs. Chuva"
     )
-
-st.divider()
-
-# ------------------------------------ bloco 2: tabela por linha largura total
-st.subheader("Comparação por Linha (maior perda → menor)")
-if not route_df.empty:
-    st.dataframe(
-        route_df,
-        hide_index=True,
-        use_container_width=True,
-        column_config={
-            "route_id": st.column_config.TextColumn("Linha"),
-            "route_name": st.column_config.TextColumn("Nome da Linha"),
-            "readings": st.column_config.NumberColumn("Total Válidas", format="%d"),
-            "dry_readings": st.column_config.NumberColumn("Leituras (Seco)", format="%d"),
-            "rain_readings": st.column_config.NumberColumn("Leituras (Chuva)", format="%d"),
-            "dry_avg_speed_kmh": st.column_config.NumberColumn(
-                "Seco Mesmo Trecho (km/h)", format="%.2f"
-            ),
-            "rain_avg_speed_kmh": st.column_config.NumberColumn(
-                "Média Chuva (km/h)", format="%.2f"
-            ),
-            "avg_diff_from_dry_kmh": st.column_config.NumberColumn(
-                "Impacto (km/h)",
-                format="%.2f",
-                help="Média da diferença trecho a trecho em relação ao tempo seco.",
-            ),
-        },
-    )
-else:
-    st.info(f"Nenhuma linha atingiu o mínimo de {min_readings} leituras no seco e na chuva.")
-
-# ---------------------------------------------------- auditoria opcional
-with st.expander("Auditar cobertura e leituras individuais"):
-    if kpis["unknown_readings"] > 0:
-        st.caption(
-            f"{br(kpis['unknown_readings'], 0)} leituras válidas estão sem dado de chuva no CEMADEN "
-            "para a hora correspondente e não entram nos gráficos acima."
-        )
-    include_non_ok = st.checkbox("Incluir veículos parados / leituras descartadas", value=False)
-    sample_df = queries.get_readings_sample(
+    st.subheader(hourly_title)
+    hourly_df = queries.get_hourly_profile(
         route_ids=selected_routes,
         peak_mode=peak_choice,
-        days_of_week=selected_days,
-        include_unknown=True,
-        only_ok_speed=not include_non_ok,
-        limit=100,
+        min_readings=MIN_READINGS,
+        hour_start=5,
+        hour_end=23,
     )
-    if not sample_df.empty:
-        display_sample = sample_df.copy()
-        display_sample["rain_intensity"] = display_sample["rain_intensity"].map(
-            lambda x: RAIN_LABELS.get(x, x)
+    if not hourly_df.empty:
+        hourly_chart = (
+            alt.Chart(hourly_df)
+            .mark_line(point=True, strokeWidth=2.5)
+            .encode(
+                x=alt.X(
+                    "hour_of_day:O",
+                    title="Hora do dia (SP)",
+                    axis=alt.Axis(labelAngle=0),
+                ),
+                y=alt.Y(
+                    "avg_speed_kmh:Q",
+                    title="Velocidade média (km/h)",
+                    scale=alt.Scale(zero=False),
+                ),
+                color=alt.Color(
+                    "condition:N",
+                    title="Condição",
+                    scale=alt.Scale(
+                        domain=["Seco (mesmo trecho)", "Chuva"],
+                        range=["#2E6B9E", "#C0392B"],
+                    ),
+                ),
+                tooltip=[
+                    alt.Tooltip("hour_of_day:O", title="Hora"),
+                    alt.Tooltip("condition:N", title="Condição"),
+                    alt.Tooltip("avg_speed_kmh:Q", title="Velocidade (km/h)", format=".2f"),
+                    alt.Tooltip("readings:Q", title="Leituras", format=",.0f"),
+                ],
+            )
+            .properties(height=340)
         )
-        display_sample["speed_flag"] = display_sample["speed_flag"].map(
-            lambda x: SPEED_FLAG_LABELS.get(x, x)
+        st.altair_chart(hourly_chart, use_container_width=True)
+    else:
+        st.info("Sem amostra suficiente por hora para os filtros atuais.")
+
+    st.info(
+        "**Nota sobre intensidade da chuva (fraca / moderada / forte):** a camada Gold classifica cada leitura "
+        "por faixa de precipitação, mas este painel compara **Seco vs. Chuva** no agregado. Na janela coletada "
+        f"({options['days_count']} dias), a grande maioria das ocorrências foi de chuva fraca (≤ 2,5 mm/h), "
+        "com poucos episódios independentes de chuva moderada e forte — volume ainda insuficiente para "
+        "conclusões estatísticas robustas por faixa de intensidade."
+    )
+
+# ====================================================== ABA 2: LINHAS E MAPA
+with tab_linhas:
+    st.subheader("Impacto por Linha (maior perda → menor)")
+    if not route_df.empty:
+        route_bars = (
+            alt.Chart(route_df)
+            .mark_bar()
+            .encode(
+                y=alt.Y(
+                    "route_id:N",
+                    sort=alt.SortField(field="avg_diff_from_dry_kmh", order="ascending"),
+                    title="Linha",
+                ),
+                x=alt.X("avg_diff_from_dry_kmh:Q", title="Delta vs. Seco (km/h)"),
+                color=alt.condition(
+                    alt.datum.avg_diff_from_dry_kmh < 0,
+                    alt.value(COLOR_LOSS),
+                    alt.value(COLOR_GAIN),
+                ),
+                tooltip=[
+                    alt.Tooltip("route_id:N", title="Linha"),
+                    alt.Tooltip("route_name:N", title="Nome"),
+                    alt.Tooltip("dry_avg_speed_kmh:Q", title="Seco (km/h)", format=".2f"),
+                    alt.Tooltip("rain_avg_speed_kmh:Q", title="Chuva (km/h)", format=".2f"),
+                    alt.Tooltip("avg_diff_from_dry_kmh:Q", title="Impacto (km/h)", format="+.2f"),
+                    alt.Tooltip("avg_diff_pct:Q", title="Impacto (%)", format="+.1f"),
+                    alt.Tooltip("rain_readings:Q", title="Leituras chuva", format=",.0f"),
+                ],
+            )
         )
+        zero_x = alt.Chart(pd.DataFrame({"x": [0]})).mark_rule(
+            color="#666666", strokeDash=[4, 4]
+        ).encode(x="x:Q")
+        st.altair_chart(
+            (route_bars + zero_x).properties(height=max(220, len(route_df) * 34)),
+            use_container_width=True,
+        )
+
         st.dataframe(
-            display_sample,
+            route_df,
             hide_index=True,
             use_container_width=True,
             column_config={
-                "observed_at": st.column_config.DatetimeColumn("Horário (SP)"),
                 "route_id": st.column_config.TextColumn("Linha"),
-                "direction_id": st.column_config.NumberColumn("Sentido", format="%d"),
-                "vehicle_id": st.column_config.TextColumn("Veículo"),
-                "speed_kmh": st.column_config.NumberColumn("Velocidade (km/h)", format="%.2f"),
-                "speed_flag": st.column_config.TextColumn("Status GPS"),
-                "station_id": st.column_config.TextColumn("Estação"),
-                "station_name": st.column_config.TextColumn("Nome da Estação"),
-                "precipitation_mm": st.column_config.NumberColumn("Chuva (mm/h)", format="%.2f"),
-                "rain_intensity": st.column_config.TextColumn("Intensidade"),
-                "speed_diff_from_dry_avg": st.column_config.NumberColumn(
-                    "Delta vs. Seco (km/h)", format="%.2f"
+                "route_name": st.column_config.TextColumn("Nome da Linha"),
+                "readings": st.column_config.NumberColumn("Total Válidas", format="%d"),
+                "dry_readings": st.column_config.NumberColumn("Leituras (Seco)", format="%d"),
+                "rain_readings": st.column_config.NumberColumn("Leituras (Chuva)", format="%d"),
+                "dry_avg_speed_kmh": st.column_config.NumberColumn(
+                    "Seco Mesmo Trecho (km/h)", format="%.2f"
                 ),
-                "is_peak": st.column_config.CheckboxColumn("Pico"),
+                "rain_avg_speed_kmh": st.column_config.NumberColumn(
+                    "Média Chuva (km/h)", format="%.2f"
+                ),
+                "avg_diff_from_dry_kmh": st.column_config.NumberColumn(
+                    "Impacto (km/h)", format="%.2f"
+                ),
+                "avg_diff_pct": st.column_config.NumberColumn(
+                    "Impacto (%)", format="%.1f%%"
+                ),
             },
         )
+    else:
+        st.info(f"Nenhuma linha atingiu o mínimo de {MIN_READINGS} leituras no seco e na chuva.")
+
+# ====================================================== ABA 3: POR DIA
+with tab_dia:
+    st.subheader("Resumo por Dia da Coleta")
+    daily_df = queries.get_daily_summary(
+        route_ids=selected_routes,
+        peak_mode=peak_choice,
+        min_rain_readings=100,
+    )
+    if not daily_df.empty:
+        st.dataframe(
+            daily_df,
+            hide_index=True,
+            use_container_width=True,
+            column_config={
+                "date_sp": st.column_config.DateColumn("Data", format="DD/MM/YYYY"),
+                "dry_readings": st.column_config.NumberColumn("Leituras (Seco)", format="%d"),
+                "rain_readings": st.column_config.NumberColumn("Leituras (Chuva)", format="%d"),
+                "max_precipitation_mm": st.column_config.NumberColumn(
+                    "Pico de Chuva (mm/h)", format="%.2f"
+                ),
+                "avg_diff_from_dry_kmh": st.column_config.NumberColumn(
+                    "Impacto Médio (km/h)", format="%.2f"
+                ),
+            },
+        )
+    else:
+        st.info("Sem dados disponíveis para os filtros selecionados.")
 
 # ---------------------------------------------------- rodape de proveniencia
+st.divider()
 prov = queries.get_provenance_summary()
 if prov:
     st.caption(
