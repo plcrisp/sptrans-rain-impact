@@ -170,7 +170,25 @@ def main(argv: Optional[List[str]] = None) -> int:
     timeout_count = 0
     rejected_or_expired_count = 0
 
-    if total_chunks == 0 and not any(ev.get("status") == "pending" for ev in manifest_events):
+    # Recuperar apenas jobs cujo último status no manifest ainda é "pending"
+    pending_jobs: Dict[int, Dict[str, Any]] = {}
+    for ev in manifest_events:
+        jid = ev.get("job_id")
+        if jid is None:
+            continue
+        jid_int = int(jid)
+        if ev.get("status") == "pending":
+            pending_jobs[jid_int] = {
+                "station_id": ev.get("station_id"),
+                "uf": ev.get("uf", "SP"),
+                "start_dt": ev.get("start_str"),
+                "end_dt": ev.get("end_str"),
+                "scheduled_at": time.time(),
+            }
+        else:
+            pending_jobs.pop(jid_int, None)
+
+    if total_chunks == 0 and not pending_jobs:
         logger.info("Todos os blocos da janela já estão cobertos no bronze.")
         record_provenance(
             target_dir=Config.CEMADEN_BRONZE_DIR,
@@ -196,19 +214,6 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
 
     client = CemadenClient()
-
-    # Recuperar jobs pendentes anteriores
-    pending_jobs: Dict[int, Dict[str, Any]] = {}
-    for ev in manifest_events:
-        jid = ev.get("job_id")
-        if jid is not None and ev.get("status") == "pending":
-            pending_jobs[int(jid)] = {
-                "station_id": ev.get("station_id"),
-                "uf": ev.get("uf", "SP"),
-                "start_dt": ev.get("start_str"),
-                "end_dt": ev.get("end_str"),
-                "scheduled_at": time.time(),
-            }
 
     # Fila de novas requisições
     queue: List[Dict[str, Any]] = []

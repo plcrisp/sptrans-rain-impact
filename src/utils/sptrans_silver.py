@@ -1,4 +1,6 @@
+from concurrent.futures import ThreadPoolExecutor
 import json
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 import geopandas as gpd
@@ -31,46 +33,28 @@ def haversine_distance(
     return EARTH_RADIUS_M * c
 
 
-def load_bronze(root: Union[Path, str]) -> Tuple[pd.DataFrame, Dict[str, int]]:
-    """Percorre os arquivos JSON do bronze da SPTrans e achata em uma linha por veículo.
-
-    Retorna tupla com (DataFrame bruto, contagens de arquivos lidos, corrompidos e ignorados).
-    """
-    root_path = Path(root)
-    base_dir = Path(Config.BASE_DIR).resolve()
-
+def _read_json_batch(
+    batch: List[Tuple[str, str]],
+) -> Tuple[List[Tuple[Any, ...]], int, List[Tuple[str, str]]]:
+    """Lê um lote de arquivos JSON do bronze da SPTrans e retorna tuplas leves."""
+    rows: List[Tuple[Any, ...]] = []
     files_read = 0
-    files_corrupted = 0
-    files_ignored = 0
-    readings: List[Dict[str, Any]] = []
+    errors: List[Tuple[str, str]] = []
 
-    # Procura recursivamente por arquivos na estrutura particionada ou direta
-    for f in root_path.glob("**/*"):
-        if f.is_dir():
-            continue
-        if f.name == "provenance.jsonl":
-            continue
-        if f.suffix.lower() != ".json":
-            files_ignored += 1
-            continue
-
+    for full_path, rel_path in batch:
         try:
-            with open(f, "r", encoding="utf-8") as fp:
-                data = json.load(fp)
+            with open(full_path, "rb") as fp:
+                data = json.loads(fp.read())
             files_read += 1
         except Exception as e:
-            files_corrupted += 1
-            logger.warning(f"Arquivo corrompido ou JSON inválido ignorado ({f.name}): {e}")
+            errors.append((os.path.basename(full_path), str(e)))
             continue
 
-        env = data.get("envelope", {})
-        payload = data.get("payload", {})
-        vs = payload.get("vs", [])
-
-        try:
-            rel_path = str(f.resolve().relative_to(base_dir)).replace("\\", "/")
-        except ValueError:
-            rel_path = str(f).replace("\\", "/")
+        env = data.get("envelope") or {}
+        payload = data.get("payload") or {}
+        vs = payload.get("vs") or []
+        if not vs:
+            continue
 
         c_at = env.get("collected_at_utc")
         cod = env.get("codigoLinha")
@@ -78,38 +62,211 @@ def load_bronze(root: Union[Path, str]) -> Tuple[pd.DataFrame, Dict[str, int]]:
         dir_id = env.get("direction_id")
 
         for v in vs:
-            readings.append(
-                {
-                    "source_file": rel_path,
-                    "collected_at_utc": c_at,
-                    "codigoLinha": cod,
-                    "route_id": r_id,
-                    "direction_id": dir_id,
-                    "vehicle_id": str(v.get("p")) if v.get("p") is not None else None,
-                    "lat": v.get("py"),
-                    "lon": v.get("px"),
-                    "ta": v.get("ta"),
-                }
+            p_val = v.get("p")
+            rows.append(
+                (
+                    rel_path,
+                    c_at,
+                    cod,
+                    r_id,
+                    dir_id,
+                    str(p_val) if p_val is not None else None,
+                    v.get("py"),
+                    v.get("px"),
+                    v.get("ta"),
+                )
             )
 
-    stats = {
+    return rows, files_read, errors
+
+
+BRONZE_COLS = [
+    "source_file",
+    "collected_at_utc",
+    "codigoLinha",
+    "route_id",
+    "direction_id",
+    "vehicle_id",
+    "lat",
+    "lon",
+    "ta",
+]
+
+
+def _scan_json_files(
+    scan_root: Path, base_dir: Path
+) -> Tuple[List[Tuple[str, str]], int, float]:
+    """Varre um diretório com os.walk e retorna (arquivos_json, ignorados, max_mtime)."""
+    base_prefix = str(base_dir) + os.sep
+    files_ignored = 0
+    file_entries: List[Tuple[str, str]] = []
+    max_mtime = 0.0
+
+    for dirpath, _, filenames in os.walk(scan_root):
+        if dirpath.startswith(base_prefix):
+            rel_dir = dirpath[len(base_prefix) :].replace("\\", "/")
+        elif dirpath == str(base_dir):
+            rel_dir = ""
+        else:
+            rel_dir = dirpath.replace("\\", "/")
+
+        for fname in filenames:
+            if fname == "provenance.jsonl":
+                continue
+            if not fname.lower().endswith(".json"):
+                files_ignored += 1
+                continue
+            full_path = os.path.join(dirpath, fname)
+            try:
+                mtime = os.path.getmtime(full_path)
+                if mtime > max_mtime:
+                    max_mtime = mtime
+            except OSError:
+                pass
+            rel_path = f"{rel_dir}/{fname}" if rel_dir else fname
+            file_entries.append((full_path, rel_path))
+
+    return file_entries, files_ignored, max_mtime
+
+
+def _read_entries_parallel(
+    file_entries: List[Tuple[str, str]], label: str = "Bronze SPTrans"
+) -> Tuple[pd.DataFrame, int, int]:
+    """Lê uma lista de arquivos JSON em paralelo e retorna (DataFrame, lidos, corrompidos)."""
+    total_files = len(file_entries)
+    if total_files == 0:
+        return pd.DataFrame(columns=BRONZE_COLS), 0, 0
+
+    files_read = 0
+    files_corrupted = 0
+    readings: List[Tuple[Any, ...]] = []
+
+    batch_size = 250
+    batches = [
+        file_entries[i : i + batch_size]
+        for i in range(0, total_files, batch_size)
+    ]
+    max_workers = min(16, max(4, (os.cpu_count() or 4) * 2))
+    next_log_at = 10_000
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        for batch_rows, batch_read, batch_errors in executor.map(_read_json_batch, batches):
+            readings.extend(batch_rows)
+            files_read += batch_read
+            if batch_errors:
+                files_corrupted += len(batch_errors)
+                for err_name, err_msg in batch_errors:
+                    logger.warning(f"Arquivo corrompido ou JSON inválido ignorado ({err_name}): {err_msg}")
+            processed = files_read + files_corrupted
+            if processed >= next_log_at or processed == total_files:
+                logger.info(
+                    f"Progresso leitura {label}: {processed}/{total_files} arquivos "
+                    f"({len(readings)} leituras)..."
+                )
+                next_log_at += 10_000
+
+    df = pd.DataFrame.from_records(readings, columns=BRONZE_COLS) if readings else pd.DataFrame(columns=BRONZE_COLS)
+    return df, files_read, files_corrupted
+
+
+def load_bronze(
+    root: Union[Path, str],
+    cache_dir: Optional[Union[Path, str]] = None,
+) -> Tuple[pd.DataFrame, Dict[str, int]]:
+    """Percorre os arquivos JSON do bronze da SPTrans em paralelo e achata em uma linha por veículo.
+
+    Quando `cache_dir` é informado e `root` contém partições `date=YYYY-MM-DD`, mantém um cache
+    Parquet incremental por data (invalidado automaticamente se a contagem ou mtime mudar).
+    Retorna tupla com (DataFrame bruto, contagens de arquivos lidos, corrompidos e ignorados).
+    """
+    root_path = Path(root).resolve()
+    base_dir = Path(Config.BASE_DIR).resolve()
+
+    date_dirs = sorted(
+        d for d in root_path.iterdir() if d.is_dir() and d.name.startswith("date=")
+    ) if root_path.exists() else []
+
+    # Caminho incremental por partição de data quando cache_dir é fornecido
+    if cache_dir is not None and date_dirs:
+        cache_path = Path(cache_dir)
+        cache_path.mkdir(parents=True, exist_ok=True)
+        meta_path = cache_path / "_cache_meta.json"
+        meta: Dict[str, Dict[str, Any]] = {}
+        if meta_path.exists():
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            except Exception:
+                meta = {}
+
+        part_dfs: List[pd.DataFrame] = []
+        total_read = 0
+        total_corrupted = 0
+        total_ignored = 0
+        cache_hits = 0
+
+        for d in date_dirs:
+            part_name = d.name
+            file_entries, ignored, max_mtime = _scan_json_files(d, base_dir)
+            total_ignored += ignored
+            parquet_file = cache_path / f"{part_name}.parquet"
+            cached_info = meta.get(part_name)
+
+            is_valid_cache = (
+                parquet_file.exists()
+                and cached_info is not None
+                and cached_info.get("file_count") == len(file_entries)
+                and cached_info.get("max_mtime") == max_mtime
+            )
+
+            if is_valid_cache:
+                part_df = pd.read_parquet(parquet_file)
+                part_dfs.append(part_df)
+                total_read += int(cached_info.get("files_read", len(file_entries)))
+                total_corrupted += int(cached_info.get("files_corrupted", 0))
+                cache_hits += 1
+                logger.info(
+                    f"Cache hit {part_name}: {len(part_df)} leituras ({len(file_entries)} arquivos)."
+                )
+            else:
+                logger.info(f"Lendo partição {part_name} ({len(file_entries)} arquivos JSON)...")
+                part_df, f_read, f_corr = _read_entries_parallel(file_entries, label=part_name)
+                part_df.to_parquet(parquet_file, engine="pyarrow", compression="snappy", index=False)
+                meta[part_name] = {
+                    "file_count": len(file_entries),
+                    "max_mtime": max_mtime,
+                    "files_read": f_read,
+                    "files_corrupted": f_corr,
+                }
+                meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+                part_dfs.append(part_df)
+                total_read += f_read
+                total_corrupted += f_corr
+
+        logger.info(
+            f"Leitura Bronze concluída: {cache_hits}/{len(date_dirs)} partições carregadas do cache Parquet."
+        )
+        df = (
+            pd.concat(part_dfs, ignore_index=True)
+            if part_dfs
+            else pd.DataFrame(columns=BRONZE_COLS)
+        )
+        return df, {
+            "files_read": total_read,
+            "files_corrupted": total_corrupted,
+            "files_ignored": total_ignored,
+        }
+
+    # Caminho direto (sem cache ou diretório sem partições date=)
+    file_entries, files_ignored, _ = _scan_json_files(root_path, base_dir)
+    logger.info(
+        f"Encontrados {len(file_entries)} arquivos JSON na Bronze SPTrans. Iniciando leitura paralela..."
+    )
+    df, files_read, files_corrupted = _read_entries_parallel(file_entries)
+    return df, {
         "files_read": files_read,
         "files_corrupted": files_corrupted,
         "files_ignored": files_ignored,
     }
-    cols = [
-        "source_file",
-        "collected_at_utc",
-        "codigoLinha",
-        "route_id",
-        "direction_id",
-        "vehicle_id",
-        "lat",
-        "lon",
-        "ta",
-    ]
-    df = pd.DataFrame(readings, columns=cols) if readings else pd.DataFrame(columns=cols)
-    return df, stats
 
 
 def clean_readings(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, int]]:

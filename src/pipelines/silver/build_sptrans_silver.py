@@ -35,8 +35,9 @@ def run_pipeline() -> int:
         logger.error(f"Diretório bronze SPTrans não encontrado: {bronze_dir}")
         return 1
 
-    # 1. Carrega dados brutos do bronze
-    df_raw, stats = load_bronze(bronze_dir)
+    # 1. Carrega dados brutos do bronze (com cache Parquet incremental por partição de data)
+    cache_dir = Path(Config.SPTRANS_SILVER_DIR) / "_bronze_cache"
+    df_raw, stats = load_bronze(bronze_dir, cache_dir=cache_dir)
     logger.info(f"Bronze carregado: {stats['files_read']} arquivos lidos, {len(df_raw)} leituras brutas.")
 
     # 2. Limpeza estrutural e deduplicação
