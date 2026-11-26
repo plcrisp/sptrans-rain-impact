@@ -123,7 +123,14 @@ models:
           - not_null
           - accepted_values:
               arguments:
-                values: ['ok', 'first_reading', 'dt_out_of_range', 'parked', 'too_fast']
+                values:
+                  [
+                    "ok",
+                    "first_reading",
+                    "dt_out_of_range",
+                    "parked",
+                    "too_fast",
+                  ]
       - name: distance_to_station_m
         description: "Distance in meters from the bus reading to the mapped CEMADEN station."
       - name: precipitation_mm
@@ -140,11 +147,11 @@ models:
           - not_null
           - accepted_values:
               arguments:
-                values: ['dry', 'light', 'moderate', 'heavy', 'unknown']
+                values: ["dry", "light", "moderate", "heavy", "unknown"]
       - name: dry_baseline_speed_kmh
-        description: "Mean dry-weather speed (km/h) for the same route, direction, and peak flag."
+        description: "Hierarchical mean dry-weather speed (km/h) starting at the same route, direction, nearest station, weekend flag, and hour of day, falling back progressively to broader route/direction groups when no exact dry sample exists."
       - name: speed_diff_from_dry_avg
-        description: "Difference between observed speed_kmh and dry_baseline_speed_kmh."
+        description: "Difference between observed speed_kmh and dry_baseline_speed_kmh (negative values indicate slower speeds than the dry baseline)."
 
   - name: vw_bus_rain_impact
     description: "Denormalized analytical view joining fact_bus_readings with dim_lines, dim_stations, and dim_time."

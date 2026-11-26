@@ -18,8 +18,11 @@ Para responder a essa pergunta, o projeto combina:
 
 ## 🔌 Fontes de Dados
 
-- **[SPTrans Olho Vivo API](https://www.sptrans.com.br/desenvolvedores/)**: Coleta de telemetria GPS em tempo real dos veículos em operação e feeds estáticos em formato GTFS (linhas, itinerários, paradas e horários).
-- **[CEMADEN PED](https://www.gov.br/cemaden/)**: Rede oficial de monitoramento de desastres com estações pluviométricas automáticas que medem o volume de chuva a cada 10 minutos ou 1 hora.
+| Fonte                 | Formato (Bronze)                                          | Acesso                                                 | Chave Natural                             | Link                                                                   |
+| :-------------------- | :-------------------------------------------------------- | :----------------------------------------------------- | :---------------------------------------- | :--------------------------------------------------------------------- |
+| **SPTrans Olho Vivo** | JSON (particionado por `date=YYYY-MM-DD/hour=HH`)         | API REST autenticada por token (`.env`)                | `(vehicle_id, codigoLinha, timestamp_sp)` | [SPTrans Desenvolvedores](https://www.sptrans.com.br/desenvolvedores/) |
+| **SPTrans GTFS**      | ZIP / CSVs estáticos                                      | Download estático versionado em `data/reference/gtfs/` | `route_id` / `shape_id`                   | [SPTrans GTFS](https://www.sptrans.com.br/desenvolvedores/)            |
+| **CEMADEN PED**       | CSV (por estação `station=ID/req_*.csv`) + JSON cadastral | API REST pública (agendamento histórico + cadastro)    | `(station_id, timestamp_sp)`              | [CEMADEN PED](https://www.gov.br/cemaden/)                             |
 
 ---
 
@@ -29,7 +32,7 @@ A pasta `data/` é organizada da seguinte maneira:
 
 ```text
 data/
-├── provenance.jsonl          # 🧾 Histórico consolidado de proveniência das execuções (em inglês, ignorado no Git)
+├── provenance.jsonl          # 🧾 Histórico consolidado de proveniência das execuções (versionado no Git)
 │
 ├── reference/                # 🗺️ Dados estáticos de apoio (gerados uma única vez)
 │   ├── gtfs/                 # Feeds GTFS e geometria das rotas (routes_geometry.geojson)
@@ -49,7 +52,7 @@ data/
     └── project.duckdb        # Banco embutido com schemas silver e gold (Esquema Estrela)
 ```
 
-> Cada subpasta de dados (`reference/gtfs`, `reference/stations`, `reference/lines`, `bronze/sptrans`, `bronze/cemaden`, `silver/sptrans`, `silver/cemaden`) também mantém seu próprio arquivo incremental `provenance.jsonl` (em inglês, ignorado no Git) registrando origem, saídas, contagem de registros e timestamp UTC de cada execução.
+> Cada subpasta de dados (`reference/stations`, `bronze/sptrans`, `bronze/cemaden`, `silver/sptrans`, `silver/cemaden`, `gold`) também mantém seu próprio arquivo incremental `provenance.jsonl` (versionado no Git via exceção no `.gitignore`) registrando origem, saídas, contagem de registros e timestamp UTC de cada execução.
 
 ---
 
@@ -90,12 +93,61 @@ O pipeline divide-se em 4 etapas lógicas e intuitivas:
 
 ### 4. Camada Ouro / Gold (`data/gold/project.duckdb`) — _Esquema Estrela_
 
-Modelagem dimensional carregada em **DuckDB** (`silver.*` → `gold.*`):
-- **`gold.fact_bus_readings`** *(grão: 1 leitura válida de veículo em um instante — `vehicle_id`, `route_code`, `observed_at`)*: métricas de velocidade (`speed_kmh`, `speed_diff_from_dry_avg`), distância até a estação (`distance_to_station_m`) e chuva (`precipitation_mm`, `rain_intensity`, `is_raining`).
-- **`gold.dim_lines`** *(1 linha por `route_code` / sentido)*: código, nome da linha (`route_name`), `direction_id` e sentido operacional.
-- **`gold.dim_stations`** *(1 linha por `station_id`)*: nome da estação CEMADEN, cidade, UF, coordenadas e status.
-- **`gold.dim_time`** *(1 linha por `hour_key`)*: data, hora, dia da semana, `is_weekend` e `is_peak`.
-- **`gold.vw_bus_rain_impact`**: view analítica juntando fato e dimensões como fonte única de verdade para consumo.
+Modelagem dimensional declarativa em **dbt Core + DuckDB** (`silver.*` → `gold.*`):
+
+- **`gold.fact_bus_readings`** _(grão: 1 leitura de GPS de veículo em um instante — `vehicle_id`, `route_code`, `observed_at` — 185.065 linhas)_: métricas de velocidade (`speed_kmh`, `speed_diff_from_dry_avg`), flag de qualidade (`speed_flag`), distância até a estação (`distance_to_station_m`) e chuva (`precipitation_mm`, `rain_intensity`, `is_raining`).
+- **`gold.dim_lines`** _(1 linha por `route_code` / sentido — 16 linhas)_: código interno da API, `route_id` GTFS, nome da linha (`route_name`), `direction_id` e sentido operacional.
+- **`gold.dim_stations`** _(1 linha por `station_id` — 79 estações em SP, 19 mapeadas às rotas)_: nome da estação CEMADEN, cidade, UF, coordenadas e status operacional.
+- **`gold.dim_time`** _(1 linha por `hour_key` — 52 horas na última carga)_: data local (`date_sp`), hora (`hour_of_day`), dia da semana ISO (`day_of_week`), `is_weekend` e `is_peak`.
+- **`gold.vw_bus_rain_impact`** _(VIEW — 185.065 linhas)_: visão analítica achatada juntando fato e dimensões como fonte única de verdade para o painel consumidor.
+- **Integridade validada automaticamente (`dbt test`)**: `0` duplicatas de grão composto, `0` fatos órfãos em `dim_lines`, `dim_stations` e `dim_time`, e `0` velocidades `ok` fora do domínio `[0, 80]` km/h.
+
+---
+
+## 🔍 Defeitos Conhecidos das Fontes
+
+### SPTrans Olho Vivo (`data/bronze/sptrans/`)
+
+- **Leituras duplicadas de GPS**: veículos parados ou com cache na API retornam o mesmo par `(vehicle_id, codigoLinha, timestamp_sp)` em ciclos consecutivos.
+- **Timestamps defasados ou futuros**: registros ocasionais com horário muito antigo ou no futuro em relação à janela de coleta.
+- **Saltos de GPS e veículos estacionados**: pontos com deslocamento incompatível com velocidade urbana (`> 80 km/h`), intervalos fora da janela válida entre leituras consecutivas (`dt_out_of_range`) ou veículos parados em terminal/ponto (`parked`).
+
+### CEMADEN PED (`data/bronze/cemaden/`)
+
+- **Cadência irregular entre estações**: pluviômetros transmitem a cada 10 minutos quando há chuva e a cada 1 hora quando está seco.
+- **Janelas sem transmissão (falha de sensor/comunicação)**: buracos temporais em que a estação não envia registro algum (nem `0.0 mm`).
+- **Fuso horário em UTC**: timestamps originais vêm em UTC e precisam ser convertidos para `America/Sao_Paulo` para cruzar com a SPTrans.
+
+---
+
+## 🧹 Decisões de Tratamento (Camada Silver)
+
+Números referentes à última carga consolidada na Gold (`2026-11-22T15:46:49Z` — 38.813 arquivos JSON da SPTrans e 76 CSVs do CEMADEN):
+
+- **Remoção de duplicadas exatas na SPTrans**: de `186.137` leituras brutas, `1.069` duplicadas na chave `(vehicle_id, codigoLinha, timestamp_sp)` e `3` timestamps inválidos (`stale_or_future`) foram removidos, restando **`185.065`** registros na Silver (`0` nulos/inválidos e `0` fora da bounding box de SP).
+- **Sinalização em vez de exclusão silenciosa (`speed_flag`)**: extremos e estados não comparáveis são mantidos e classificados explicitamente na Silver/Gold — `123.860` válidos (`ok`), `54.202` parados (`parked`), `5.475` intervalo inválido (`dt_out_of_range`), `1.076` acima de 80 km/h (`too_fast`) e `452` primeiras leituras (`first_reading`). Apenas `speed_flag = 'ok'` entra nos cálculos de velocidade média.
+- **Sinalização explícita de ausência de chuva no CEMADEN**: dos `27.005` registros na Silver do CEMADEN (`19` estações), `4.923` são leituras reais e `22.082` são linhas sintéticas com `is_missing = True` para distinguir explicitamente _"não choveu (`0 mm`)"_ de _"sensor sem transmissão"_.
+
+---
+
+## 🧮 Atributos Derivados
+
+| Atributo                  | O que é                                                                                                                                                                                                             | Por que responde à pergunta norteadora                                                   | Quando não é possível calcular                                                                       |
+| :------------------------ | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :--------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------- |
+| `speed_kmh`               | Velocidade instantânea (km/h) calculada a partir da projeção na rota GTFS entre leituras sucessivas do mesmo veículo.                                                                                               | É a variável resposta principal para medir lentidão operacional.                         | Fica nulo quando `speed_flag != 'ok'` (primeira leitura, parado, intervalo inválido ou `> 80 km/h`). |
+| `rain_intensity`          | Faixa de intensidade horária (`dry`: `0 mm/h`, `light`: `<= 2,5`, `moderate`: `<= 10`, `heavy`: `> 10`).                                                                                                            | Permite testar se a perda de velocidade cresce proporcionalmente à intensidade da chuva. | Recebe `'unknown'` quando `rain_mm` é nulo (`rain_is_missing = True`).                               |
+| `is_raining`              | Indicador booleano (`rain_mm > 0`).                                                                                                                                                                                 | Facilita a comparação direta agregado Seco vs. Chuva.                                    | Fica nulo (`pd.NA`) quando `rain_mm` é ausente.                                                      |
+| `dry_baseline_speed_kmh`  | Média hierárquica de velocidade no tempo seco, priorizando mesma linha, sentido, estação, tipo de dia (útil/fim de semana) e hora do dia (com fallback progressivo para grupos mais amplos da mesma linha/sentido). | Isola o efeito da chuva do efeito natural do horário, do sentido e da via.               | Fica nulo se não existir nenhuma leitura seca válida (`speed_flag = 'ok'`) para a linha/sentido.     |
+| `speed_diff_from_dry_avg` | Diferença `speed_kmh - dry_baseline_speed_kmh` (km/h).                                                                                                                                                              | Mede diretamente o impacto da chuva em km/h (valores negativos = perda de velocidade).   | Fica nulo quando `speed_flag != 'ok'` ou sem baseline seco disponível.                               |
+
+---
+
+## 🔗 Junção (Enriquecimento Silver)
+
+- **Tabelas e grãos**: SPTrans Silver (`185.065` leituras no grão veículo × linha × instante) à esquerda + CEMADEN Silver agregado para o grão único `(station_id, hour_sp)` (`24.871` chaves horárias) à direita.
+- **Chave e tipo de join**: `merge(..., on=["station_id", "hour_sp"], how="left", validate="many_to_one")`.
+- **Validação de contagem**: `185.065` linhas antes → `185.065` linhas depois (`0` multiplicações de linha).
+- **Análise de casamento**: `927` chaves `(station_id, hour_sp)` casadas, `0` chaves exclusivas da SPTrans (`unmatched_key_rows = 0`) e `23.944` chaves exclusivas do CEMADEN (horas fora da janela ativa dos ônibus). Das `185.065` leituras, `154.082` possuem medição válida de chuva (`dry`: `146.324`, `light`: `6.700`, `moderate`: `665`, `heavy`: `393`) e `30.983` possuem chave casada com falha de transmissão do pluviômetro (`rain_is_missing = True` → `rain_intensity = 'unknown'`).
 
 ---
 
@@ -151,36 +203,7 @@ Crie um arquivo `.env` na raiz do projeto baseado no `.env.example`.
 
 ---
 
-## 📓 Execução pelos Notebooks (Recomendado)
-
-O projeto conta com notebooks interativos numerados na pasta `notebooks/`, cobrindo o fluxo do início ao fim:
-
-| Notebook                          | Objetivo                                                               | O que gera                                             |
-| :-------------------------------- | :--------------------------------------------------------------------- | :----------------------------------------------------- |
-| **`00_lines_and_stations.ipynb`** | Extrai a geometria GTFS e cataloga os pluviômetros de SP.              | `data/reference/gtfs/` e `cemaden_sp_stations.json`    |
-| **`01_line_selection.ipynb`**     | Ranqueia as linhas candidatas e gera o mapeamento espacial.            | `selected_lines.json` e `line_station_mapping.parquet` |
-| **`02_sptrans_pipeline.ipynb`**   | Dispara a coleta em tempo real e processa o dataset Silver da SPTrans. | `data/bronze/sptrans/` e `sptrans_silver_export.csv`   |
-| **`03_cemaden_pipeline.ipynb`**   | Coleta os dados históricos de chuva e gera a Silver tratada.           | `data/bronze/cemaden/` e `rain_silver_export.csv`      |
-
----
-
-## 📁 Estrutura do Código (`sptrans_rain_dbt/          # Modelos SQL declarativos (dbt-duckdb) da camada Gold
-├── models/
-│   ├── sources.yml        # Declaração das tabelas Silver no DuckDB
-│   ├── schema.yml         # Documentação e testes declarativos (not_null, unique, relationships)
-│   ├── dim_lines.sql      # Dimensão de linhas
-│   ├── dim_stations.sql   # Dimensão de estações pluviométricas
-│   ├── dim_time.sql       # Dimensão temporal (hora/pico/fim de semana)
-│   ├── fact_bus_readings.sql
-│   └── vw_bus_rain_impact.sql
-├── tests/                 # Testes SQL customizados de grão composto e invariantes
-└── profiles.yml           # Perfil local apontando para data/gold/project.duckdb
-
-dashboard/                 # Painel consumidor em Streamlit (somente leitura na Gold)
-├── queries.py             # Consultas DuckDB parametrizadas (read_only=True)
-└── app.py                 # Interface visual sem SQL
-
-src/`)
+## 📁 Estrutura do Código
 
 ```text
 sptrans_rain_dbt/          # Modelos SQL declarativos (dbt-duckdb) da camada Gold

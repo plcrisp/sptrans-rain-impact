@@ -1,0 +1,1 @@
+{"stage": "fetch_cemaden_stations", "source": "https://sws.cemaden.gov.br/PED/rest/pcds-cadastro/dados-cadastrais", "output": "cemaden_sp_stations.json", "records": 79, "executed_at": "2026-11-20T17:22:11Z", "city": "SÃO PAULO", "state": "SP", "ibge_code": "3550308", "active_stations": 64, "offline_stations": 15}
