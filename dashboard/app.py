@@ -46,11 +46,16 @@ st.title("Impacto da Chuva na Velocidade dos Ônibus (SPTrans)")
 
 db_path = queries.get_db_path()
 if not db_path.exists():
-    st.error(
-        f"Banco não encontrado em `{db_path}`.\n\n"
-        "Rode o pipeline antes: `python src/pipeline.py`"
-    )
-    st.stop()
+    try:
+        with st.spinner("Baixando base analítica Gold (primeira execução)..."):
+            queries.ensure_gold_db()
+    except Exception as exc:
+        st.error(
+            f"Banco não encontrado em `{db_path}` e não foi possível baixar da Release.\n\n"
+            f"Detalhe: `{exc}`\n\n"
+            "Localmente, rode `python src/pipeline.py` antes de abrir o painel."
+        )
+        st.stop()
 
 # ------------------------------------------------------------- filtros
 with st.sidebar:

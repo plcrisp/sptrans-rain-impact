@@ -2,6 +2,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+import urllib.request
 
 import duckdb
 import pandas as pd
@@ -9,11 +10,39 @@ import pandas as pd
 BASE_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_DB_PATH = BASE_DIR / "data" / "gold" / "project.duckdb"
 DEFAULT_GOLD_PROVENANCE = BASE_DIR / "data" / "gold" / "provenance.jsonl"
+DEFAULT_GOLD_DB_URL = (
+    "https://github.com/plcrisp/sptrans-rain-impact/releases/download/v1.0-data/project.duckdb"
+)
 
 
 def get_db_path() -> Path:
     """Resolve the DuckDB database path from GOLD_DB_PATH or default location."""
     return Path(os.getenv("GOLD_DB_PATH", str(DEFAULT_DB_PATH)))
+
+
+def ensure_gold_db(url: Optional[str] = None) -> Path:
+    """Ensure project.duckdb exists locally, downloading from GitHub Release if missing."""
+    db_path = get_db_path()
+    if db_path.exists():
+        return db_path
+
+    download_url = url or os.getenv("GOLD_DB_URL") or DEFAULT_GOLD_DB_URL
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = db_path.with_suffix(".duckdb.tmp")
+    try:
+        req = urllib.request.Request(download_url, headers={"User-Agent": "sptrans-rain-impact"})
+        with urllib.request.urlopen(req, timeout=120) as resp, open(tmp_path, "wb") as out:
+            while True:
+                chunk = resp.read(1024 * 1024)
+                if not chunk:
+                    break
+                out.write(chunk)
+        os.replace(tmp_path, db_path)
+    except Exception:
+        if tmp_path.exists():
+            tmp_path.unlink(missing_ok=True)
+        raise
+    return db_path
 
 
 def _query(sql: str, params: Optional[List[Any]] = None) -> pd.DataFrame:
